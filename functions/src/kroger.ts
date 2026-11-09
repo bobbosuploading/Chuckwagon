@@ -4,6 +4,7 @@
  */
 
 const BASE = "https://api.kroger.com/v1";
+const USER_AGENT = "Chuckwagon/0.1 (grocery deal meal planner)";
 
 export interface KrogerStore {
   locationId: string;
@@ -39,6 +40,7 @@ export class KrogerClient {
       headers: {
         Authorization: `Basic ${basic}`,
         "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
       },
       body: "grant_type=client_credentials&scope=product.compact",
     });
@@ -52,7 +54,11 @@ export class KrogerClient {
     const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
     for (let attempt = 1; ; attempt++) {
       const res = await fetch(`${BASE}${path}?${qs}`, {
-        headers: { Authorization: `Bearer ${await this.getToken()}`, Accept: "application/json" },
+        headers: {
+          Authorization: `Bearer ${await this.getToken()}`,
+          Accept: "application/json",
+          "User-Agent": USER_AGENT,
+        },
       });
       if (res.ok) return (await res.json()) as T;
       // Back off on rate limits and transient server errors.

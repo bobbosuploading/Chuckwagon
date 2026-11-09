@@ -1,0 +1,35 @@
+name: Collect Kroger deals
+
+on:
+  schedule:
+    # Mon/Wed/Fri 12:00 UTC = 6 AM Central (standard time), 7 AM during daylight time.
+    - cron: "0 12 * * 1,3,5"
+  workflow_dispatch: {}
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Write Firebase credentials
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Collect
+        run: node lib/cli.js
+        env:
+          KROGER_CLIENT_ID: ${{ secrets.KROGER_CLIENT_ID }}
+          KROGER_CLIENT_SECRET: ${{ secrets.KROGER_CLIENT_SECRET }}
+          HOME_ZIP: "77437"
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json

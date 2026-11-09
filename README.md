@@ -37,3 +37,17 @@ Google Cloud console > Cloud Scheduler > the `collectKroger` job > **Force run**
 ## Changing what's collected
 
 Edit `functions/src/config.ts`: search terms per category, number of stores, search radius.
+
+## Running the collector outside Google Cloud
+
+Kroger's bot protection blocks requests from Google Cloud, so the scheduled Cloud Function can't reach the store lookup. The same code can run from GitHub Actions (`.github/workflows/collect-kroger.yml`) or any computer with `node functions/lib/cli.js`.
+
+GitHub Actions needs three repository secrets (Settings > Secrets and variables > Actions):
+
+| Secret | Value |
+|---|---|
+| `KROGER_CLIENT_ID` | Kroger app client ID |
+| `KROGER_CLIENT_SECRET` | Kroger app client secret |
+| `FIREBASE_SERVICE_ACCOUNT` | Full JSON of a Firebase service account key (Firebase console > Project settings > Service accounts > Generate new private key) |
+
+Run it on demand from the Actions tab > Collect Kroger deals > Run workflow.
