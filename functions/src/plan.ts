@@ -38,6 +38,15 @@ const DEALS_PER_CATEGORY: Partial<Record<Category, number>> = {
 };
 
 const AISLES = ["Produce", "Meat", "Seafood", "Dairy", "Bakery", "Frozen", "Pantry", "Other"] as const;
+const CATEGORY_AISLE: Partial<Record<Category, (typeof AISLES)[number]>> = {
+  produce: "Produce",
+  meat: "Meat",
+  seafood: "Seafood",
+  dairy: "Dairy",
+  bakery: "Bakery",
+  frozen: "Frozen",
+  pantry: "Pantry",
+};
 
 const PlanSchema = z.object({
   meals: z.array(
@@ -85,7 +94,7 @@ Rules:
 - Keep recipes to the time limit, written as short numbered-step instructions a busy parent can follow.
 - If a BUDGET is given, keep the estimated total under it; pick cheaper meals if needed.
 - If the sale items can't support the requested number of meals, return fewer and explain in notes.
-- Group the grocery list by aisle, one line per item to buy.`;
+- The grocery list must be COMPLETE: every ingredient from every meal that isn't under HAVE AT HOME, combined into one line per product (usually 12 to 25 lines). Group it by aisle.`;
 
 function dealLine(d: Deal, id: string): string {
   const size = d.size ? ` | ${d.size}` : "";
@@ -182,6 +191,41 @@ ${lines}`;
   if (response.stop_reason === "max_tokens") throw new Error("The plan was cut off (max_tokens)");
   const plan = response.parsed_output;
   if (!plan) throw new Error("The model's answer didn't match the plan format");
+
+  // Safety net: if the model left meal ingredients off the list, add them.
+  const listed = plan.groceryList;
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z ]/g, "").trim();
+  const listedDealIds = new Set(listed.map((li) => li.dealId).filter(Boolean));
+  const listedNames = new Set(listed.map((li) => norm(li.item)));
+  const atHome = (req.haveAtHome || "salt, pepper, cooking oil, oil, basic spices, spices")
+    .split(",")
+    .map(norm)
+    .filter(Boolean);
+  const missing = new Map<string, ModelPlan["groceryList"][number]>();
+  for (const meal of plan.meals) {
+    for (const ing of meal.ingredients) {
+      const deal = ing.dealId ? deals.get(ing.dealId) : undefined;
+      const key = deal ? `deal:${ing.dealId}` : `name:${norm(ing.item)}`;
+      if (deal && listedDealIds.has(ing.dealId)) continue;
+      if (!deal && (listedNames.has(norm(ing.item)) || atHome.some((h) => norm(ing.item).includes(h)))) continue;
+      const existing = missing.get(key);
+      if (existing) {
+        existing.quantityNote += ` + ${ing.amount}`;
+        if (!existing.forMeals.includes(meal.name)) existing.forMeals.push(meal.name);
+        continue;
+      }
+      missing.set(key, {
+        aisle: deal ? CATEGORY_AISLE[deal.category] ?? "Other" : "Other",
+        item: deal ? deal.name : ing.item,
+        buyCount: 1,
+        quantityNote: ing.amount,
+        pounds: null,
+        dealId: deal ? ing.dealId : null,
+        forMeals: [meal.name],
+      });
+    }
+  }
+  plan.groceryList = [...listed, ...missing.values()];
 
   // Price the list from our own data.
   let saleItems = 0;
