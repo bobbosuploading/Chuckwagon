@@ -61,6 +61,10 @@ const PlanSchema = z.object({
       item: z.string(),
       buyCount: z.number().int().describe("How many packages/units of this item to buy"),
       quantityNote: z.string().describe('Human-friendly amount, e.g. "about 3 lb" or "1 bag"'),
+      pounds: z
+        .number()
+        .nullable()
+        .describe("For sale items priced per lb (/lb): estimated pounds to buy in total. Otherwise null."),
       dealId: z.string().nullable(),
       forMeals: z.array(z.string()),
     })
@@ -189,10 +193,11 @@ ${lines}`;
       itemsNotPriced++;
       return { ...li, dealId: null, onSale: false, salePrice: null, regularPrice: null, lineTotal: null, lineSavings: null, checked: false };
     }
-    // Weight-priced items have per-lb prices; we only know package counts, so leave the line total out.
+    // Weight-priced items have per-lb prices, so multiply by the estimated pounds instead of the package count.
     const byWeight = deal.soldBy === "WEIGHT";
-    const lineTotal = byWeight ? null : round2(deal.salePrice * li.buyCount);
-    const lineSavings = byWeight ? null : round2(deal.savings * li.buyCount);
+    const qty = byWeight ? li.pounds : li.buyCount;
+    const lineTotal = qty ? round2(deal.salePrice * qty) : null;
+    const lineSavings = qty ? round2(deal.savings * qty) : null;
     if (lineTotal !== null) saleItems += lineTotal;
     if (lineSavings !== null) savings += lineSavings;
     return {
