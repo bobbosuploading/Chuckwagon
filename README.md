@@ -2,7 +2,7 @@
 
 Turns this week's grocery sales into meals and a shopping list.
 
-This repo holds the Firebase backend. Phase 1 collects Kroger sale items for stores near a home ZIP code every Monday, Wednesday and Friday and stores them in Firestore. H-E-B, meal planning and the iOS app come next.
+This repo holds the Firebase backend. Phase 1 collects Kroger sale items for stores near a home ZIP code every Monday, Wednesday and Friday (via GitHub Actions) and stores them in Firestore. H-E-B, meal planning and the iOS app come next.
 
 ## Data
 
@@ -19,20 +19,18 @@ Deals that were not seen in the latest run are deleted, so `deals` always holds 
 1. Install Node.js 22 (LTS) and the Firebase CLI: `npm install -g firebase-tools`, then `firebase login`.
 2. In the Firebase console, create the `chuckwagon` project, enable Firestore, and switch to the Blaze plan (set a budget alert).
 3. Clone this repo, then link it to your project: `firebase use --add` and pick the project.
-4. Create `functions/.env` from `functions/.env.example` and fill in your Kroger client ID.
-5. Store the Kroger client secret in Secret Manager (never in the code):
-   `firebase functions:secrets:set KROGER_CLIENT_SECRET`
+4. Add the GitHub Actions secrets listed below.
 
 ## Deploy
 
 ```
 cd functions && npm install && cd ..
-firebase deploy --only functions,firestore
+firebase deploy --only firestore
 ```
 
 ## Run it now instead of waiting for Monday
 
-Google Cloud console > Cloud Scheduler > the `collectKroger` job > **Force run**. Then check Firestore for `deals`, and `firebase functions:log` for the summary.
+GitHub > Actions > **Collect Kroger deals** > **Run workflow**. Then check Firestore for `deals` and the latest entry in `runs`.
 
 ## Changing what's collected
 
