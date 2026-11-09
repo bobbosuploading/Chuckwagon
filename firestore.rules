@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Signed-in app users can read stores and deals. Only the backend writes.
+    match /stores/{storeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /deals/{dealId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    // Everything else (run logs, etc.) is backend-only.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

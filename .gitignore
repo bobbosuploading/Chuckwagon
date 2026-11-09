@@ -1,0 +1,9 @@
+node_modules/
+functions/lib/
+.env
+.env.*
+!.env.example
+.secret.local
+*.log
+.firebase/
+.DS_Store
