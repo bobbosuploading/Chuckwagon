@@ -224,7 +224,8 @@ ${lines}`;
     storeId: req.storeId,
     storeName: store.get("name"),
     model: response.model,
-    request: req,
+    // Firestore rejects undefined values, so drop unset options.
+    request: JSON.parse(JSON.stringify(req)) as PlanRequest,
     meals,
     groceryList,
     notes: plan.notes,
