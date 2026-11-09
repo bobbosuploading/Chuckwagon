@@ -49,3 +49,11 @@ GitHub Actions needs three repository secrets (Settings > Secrets and variables 
 | `FIREBASE_SERVICE_ACCOUNT` | Full JSON of a Firebase service account key (Firebase console > Project settings > Service accounts > Generate new private key) |
 
 Run it on demand from the Actions tab > Collect Kroger deals > Run workflow.
+
+## Meal planner (phase 2)
+
+`planMealsForStore` (callable Cloud Function) takes a store and the shopper's preferences, picks the best current deals at that store, asks Claude for meals and a grocery list (structured JSON), prices the list from Firestore, and saves it to `plans/`. The model is set by `DEFAULT_MODEL` in `functions/src/plan.ts`.
+
+Secrets: `firebase functions:secrets:set ANTHROPIC_API_KEY` (for the function) and an `ANTHROPIC_API_KEY` GitHub secret (for testing).
+
+Try it without the app: GitHub > Actions > **Test meal plan** > Run workflow, pick a model and preferences. The plan shows on the run's summary page and is saved in Firestore `plans/`.

@@ -1,0 +1,57 @@
+name: Test meal plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Claude model"
+        type: choice
+        options: [claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5]
+        default: claude-opus-5-5
+      meals:
+        description: "Number of meals"
+        default: "4"
+      household:
+        description: "Household size"
+        default: "3"
+      diet:
+        description: "Diet (e.g. none, vegetarian, no pork)"
+        default: "none"
+      dislikes:
+        description: "Dislikes"
+        default: ""
+      budget:
+        description: "Budget in dollars (blank for none)"
+        default: ""
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Write Firebase credentials
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Plan meals
+        run: node lib/plan-cli.js
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+          MODEL: ${{ inputs.model }}
+          MEALS: ${{ inputs.meals }}
+          HOUSEHOLD: ${{ inputs.household }}
+          DIET: ${{ inputs.diet }}
+          DISLIKES: ${{ inputs.dislikes }}
+          BUDGET: ${{ inputs.budget }}
