@@ -122,6 +122,9 @@ struct ListItemRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.item).strikethrough(item.checked).foregroundStyle(item.checked ? .secondary : .primary)
                     Text(item.quantityNote).font(.caption).foregroundStyle(.secondary)
+                    if let tip = item.stockUp, !item.checked {
+                        StockUpNote(tip: tip)
+                    }
                 }
                 Spacer()
                 if item.onSale, let sale = item.salePrice {

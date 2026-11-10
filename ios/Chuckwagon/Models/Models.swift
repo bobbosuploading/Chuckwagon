@@ -60,8 +60,39 @@ struct Deal: Identifiable, Codable, Hashable {
     var pctOff: Int
     /// Ad text when there's no simple price, e.g. "Buy 2, get pasta free".
     var promo: String?
+    /// Set when the price is low enough to buy extra and the item keeps.
+    var stockUp: StockUp?
 
     var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
+}
+
+/// "Worth buying extra": from the backend's stock-up rules (functions/src/stockUp.ts).
+struct StockUp: Codable, Hashable {
+    /// "great" (45%+ off or BOGO) or "good".
+    var level: String
+    /// e.g. "48% off" or "Buy 1, get 1 free".
+    var reason: String
+    /// "freezer", "pantry" or "fridge".
+    var keep: String
+    /// e.g. "Enough for 6 to 8 weeks, until the next sale".
+    var howMuch: String
+    var storage: String
+
+    var isGreat: Bool { level == "great" }
+    var symbol: String {
+        switch keep {
+        case "freezer": "snowflake"
+        case "fridge": "refrigerator"
+        default: "cabinet"
+        }
+    }
+    var keepLabel: String {
+        switch keep {
+        case "freezer": "Freezes well"
+        case "fridge": "Keeps in the fridge"
+        default: "Keeps in the pantry"
+        }
+    }
 }
 
 enum DealCategory: String, CaseIterable, Identifiable {
@@ -148,6 +179,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var forMeals: [String]
         /// Which store to buy it at (multi-store plans). Older plans don't have it.
         var storeName: String?
+        /// Worth buying extra of. Older plans don't have it.
+        var stockUp: StockUp?
         /// For items not on sale: "store", "receipt", or "estimate" (another store's price stands in).
         var priceSource: String?
         /// For items not on sale: the product that was priced.
@@ -157,7 +190,7 @@ struct MealPlan: Codable, Identifiable, Hashable {
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs
+            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs, stockUp
         }
     }
 
