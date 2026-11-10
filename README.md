@@ -81,7 +81,7 @@ Try it first with **Actions > Collect Walmart prices > Run workflow** (dry run i
 
 ## H-E-B everyday prices (beta only)
 
-H-E-B has no API. For the beta, `.github/workflows/collect-heb-prices.yml` runs once a month (the 2nd)
+H-E-B has no API. For the beta, `.github/workflows/collect-heb-prices.yml` runs once a month (the 11th, the day after the Apify free plan resets)
 and fetches shelf prices for about 80 staple ingredients (711 products) at the H-E-B nearest the home
 ZIP through a third-party Apify scraper (`zaiq/heb-scraper`, about $0.006 per product). That fits
 Apify's free plan ($5 of usage a month), and each run is capped so it can't cost more. Prices are

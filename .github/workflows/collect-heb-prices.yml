@@ -1,11 +1,11 @@
 name: Collect H-E-B everyday prices
 
-# Once a month (the 2nd, 6:45 AM CT) through Apify's free plan.
+# Once a month (the 11th, 6:45 AM CT, the day after the Apify free plan resets) through Apify's free plan.
 # Needs the APIFY_TOKEN secret; skips itself until it exists.
 # Turn off before a paid launch by setting the repository variable HEB_PRICES_ENABLED to false.
 on:
   schedule:
-    - cron: "45 12 2 * *"
+    - cron: "45 12 11 * *"
   workflow_dispatch:
     inputs:
       dry_run:
