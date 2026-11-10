@@ -14,17 +14,18 @@ import { WalmartAuth, WalmartClient, WalmartItem } from "./walmart";
  * Walmart prices from the Walmart Affiliate API.
  *
  * Every run prices the same few hundred common items for the home ZIP and keeps a short
- * price history per item in walmartPrices/{itemId}. An item becomes a deal when:
+ * price history per item in walmartPrices/{zip}_{itemId} (prices vary by ZIP). An item becomes a deal when:
  *   - Walmart marks it Rollback, Clearance or Special Buy, or
  *   - it shows a crossed-out "was" price, or
  *   - today's price is at least WALMART_MIN_DROP below its usual (median) price.
  * Prices are walmart.com prices for the ZIP, which usually but not always match the shelf.
  */
 
-/** One day's price, as kept in walmartPrices/{itemId}.history. */
+/** One day's price, as kept in walmartPrices/{zip}_{itemId}.history. */
 export interface PricePoint { d: string; p: number }
 
 export interface WalmartPriceDoc {
+  zip: string;
   itemId: number;
   name: string;
   category: Category;
@@ -121,7 +122,7 @@ export interface WalmartSummary {
 }
 
 /** Finds the items to watch: best sellers per search term, plus anything watched recently. */
-async function watchList(wm: WalmartClient, db: Firestore | null, errors: string[]) {
+async function watchList(wm: WalmartClient, db: Firestore | null, zip: string, errors: string[]) {
   const watch = new Map<number, Category>();
   for (const [category, terms] of Object.entries(SEARCH_TERMS) as [Category, string[]][]) {
     const categoryId = WALMART_CATEGORY_IDS[category] ?? WALMART_CATEGORY_IDS.default;
@@ -143,7 +144,7 @@ async function watchList(wm: WalmartClient, db: Firestore | null, errors: string
   }
   if (db) {
     const cutoff = Timestamp.fromMillis(Date.now() - 21 * 86_400_000);
-    const recent = await db.collection("walmartPrices").where("lastSeen", ">=", cutoff).get();
+    const recent = await db.collection("walmartPrices").where("zip", "==", zip).where("lastSeen", ">=", cutoff).get();
     recent.forEach((d) => {
       const doc = d.data() as WalmartPriceDoc;
       if (!watch.has(doc.itemId)) watch.set(doc.itemId, doc.category);
@@ -170,7 +171,7 @@ export async function collectWalmartDeals(auth: WalmartAuth, zip: string, dryRun
   const storeId = store ? `walmart-${store.no}` : `walmart-${zip}`;
   summary.store = store ? `${store.name} #${store.no}, ${store.city}` : `near ${zip}`;
 
-  const watch = await watchList(wm, db, summary.errors);
+  const watch = await watchList(wm, db, zip, summary.errors);
   summary.watched = watch.length;
   const categoryOf = new Map(watch);
 
@@ -188,10 +189,10 @@ export async function collectWalmartDeals(auth: WalmartAuth, zip: string, dryRun
   // Earlier prices, to spot drops.
   const histories = new Map<number, PricePoint[]>();
   if (db && priced.length) {
-    const refs = priced.map((it) => db.doc(`walmartPrices/${it.itemId}`));
+    const refs = priced.map((it) => db.doc(`walmartPrices/${zip}_${it.itemId}`));
     for (let i = 0; i < refs.length; i += 100) {
       const snaps = await db.getAll(...refs.slice(i, i + 100));
-      for (const s of snaps) if (s.exists) histories.set(Number(s.id), (s.data() as WalmartPriceDoc).history ?? []);
+      for (const s of snaps) if (s.exists) histories.set((s.data() as WalmartPriceDoc).itemId, (s.data() as WalmartPriceDoc).history ?? []);
     }
   }
 
@@ -216,6 +217,9 @@ export async function collectWalmartDeals(auth: WalmartAuth, zip: string, dryRun
       state: store?.stateProvCode ?? "",
       zipCode: store?.zip ?? zip,
     },
+    /** The ZIP these prices are for. */
+    zip,
+    ...(store?.coordinates?.length === 2 ? { lat: store.coordinates[1], lng: store.coordinates[0] } : {}),
     source: "walmart-api",
     updatedAt: now,
   }, { merge: true });
@@ -224,13 +228,14 @@ export async function collectWalmartDeals(auth: WalmartAuth, zip: string, dryRun
     const history = (histories.get(it.itemId) ?? []).filter((h) => h.d !== day);
     history.push({ d: day, p: it.salePrice! });
     const doc: WalmartPriceDoc = {
+      zip,
       itemId: it.itemId,
       name: it.name,
       category: categoryOf.get(it.itemId) ?? "pantry",
       history: history.slice(-HISTORY_MAX),
       lastSeen: now,
     };
-    writer.set(db.doc(`walmartPrices/${it.itemId}`), doc);
+    writer.set(db.doc(`walmartPrices/${zip}_${it.itemId}`), doc);
   }
   for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), d);
   await writer.flush();

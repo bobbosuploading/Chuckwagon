@@ -15,6 +15,8 @@ export interface WalmartStore {
   city?: string;
   stateProvCode?: string;
   zip?: string;
+  /** [longitude, latitude] */
+  coordinates?: number[];
 }
 
 export interface WalmartItem {

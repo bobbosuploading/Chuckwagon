@@ -63,7 +63,7 @@ Try it without the app: GitHub > Actions > **Test meal plan** > Run workflow, pi
 Walmart has no weekly ad, so `.github/workflows/collect-walmart.yml` (Mon/Wed/Fri) prices the
 best-selling items for each search term in `functions/src/config.ts` (about 200 to 300 items)
 for the home ZIP through the Walmart Affiliate API. Each item's price history is kept in
-`walmartPrices/{itemId}`. An item is saved to `deals` when Walmart marks it Rollback, Clearance
+`walmartPrices/{zip}_{itemId}`. An item is saved to `deals` when Walmart marks it Rollback, Clearance
 or Special Buy, shows a crossed-out price, or costs at least 8% less than its usual price over
 the last 60 days (needs 3 earlier runs, so price drops start showing about a week in).
 Prices are walmart.com prices for the ZIP; they usually match the shelf.
