@@ -52,7 +52,7 @@ Run it on demand from the Actions tab > Collect Kroger deals > Run workflow.
 
 ## Meal planner (phase 2)
 
-`planMealsForStore` (callable Cloud Function) takes a store and the shopper's preferences, picks the best current deals at that store, asks Claude for meals and a grocery list (structured JSON), prices the list from Firestore, and saves it to `plans/`. The model is set by `DEFAULT_MODEL` in `functions/src/plan.ts`.
+`planMealsForStore` (callable Cloud Function) takes a store and the shopper's preferences, picks the best current deals at that store, asks Claude for meals and a grocery list (structured JSON), prices the list from Firestore, and saves it to `plans/`. Everyday plans use Claude Haiku 5.5 (`DEFAULT_MODEL`); premium plans (`premium: true`) use Claude Opus 5.5 (`PREMIUM_MODEL`), both in `functions/src/plan.ts`.
 
 Secrets: `firebase functions:secrets:set ANTHROPIC_API_KEY` (for the function) and an `ANTHROPIC_API_KEY` GitHub secret (for testing).
 

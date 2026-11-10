@@ -9,7 +9,7 @@ import { appendFileSync } from "node:fs";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
-import { DEFAULT_MODEL, MealPlan, planMeals } from "./plan";
+import { MealPlan, planMeals } from "./plan";
 
 function toMarkdown(p: MealPlan): string {
   const out: string[] = [];
@@ -63,7 +63,7 @@ async function main() {
       dislikes: process.env.DISLIKES,
       budget: num(process.env.BUDGET),
     },
-    process.env.MODEL || DEFAULT_MODEL
+    process.env.MODEL || undefined
   );
   const ref = await db.collection("plans").add({ ...plan, uid: "test" });
   const md = toMarkdown(plan) + `\n\n_Saved as plans/${ref.id}_\n`;

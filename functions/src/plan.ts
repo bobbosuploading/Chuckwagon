@@ -11,8 +11,11 @@ import { z } from "zod";
 import type { Category } from "./config";
 import type { Deal } from "./collectKroger";
 
-/** Change this to compare models. Must be a current Claude model ID. */
-export const DEFAULT_MODEL = "claude-opus-5-5";
+/** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
+export const DEFAULT_MODEL = "claude-haiku-5-5";
+export const PREMIUM_MODEL = "claude-opus-5-5";
+/** Models that support the server-side refusal fallback. */
+const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
 
 export interface PlanRequest {
   storeId: string;
@@ -24,6 +27,7 @@ export interface PlanRequest {
   haveAtHome?: string;
   maxCookMinutes?: number; // default 45
   budget?: number; // optional: total for sale + regular items, in dollars
+  premium?: boolean; // use PREMIUM_MODEL ("chef's pick")
 }
 
 /** How many of the best deals per category to send to the model. Household goods aren't meal ingredients. */
@@ -145,8 +149,9 @@ export async function planMeals(
   db: Firestore,
   anthropic: Anthropic,
   req: PlanRequest,
-  model = DEFAULT_MODEL
+  modelOverride?: string
 ): Promise<MealPlan> {
+  const model = modelOverride || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
   const store = await db.doc(`stores/${req.storeId}`).get();
   if (!store.exists) throw new Error(`Unknown store ${req.storeId}`);
 
@@ -181,9 +186,8 @@ ${lines}`;
   const response = await anthropic.beta.messages.parse({
     model,
     max_tokens: 16000,
-    betas: ["server-side-fallback-2026-07-01"],
     // If the model declines (very unlikely for recipes), the API retries on a fallback model.
-    fallbacks: "default",
+    ...(FALLBACK_MODELS.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
     output_config: { effort: "medium", format: betaZodOutputFormat(PlanSchema) },
     system: SYSTEM,
     messages: [{ role: "user", content: user }],
