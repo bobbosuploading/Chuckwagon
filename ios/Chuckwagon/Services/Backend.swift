@@ -70,6 +70,8 @@ enum Backend {
             "dislikes": prefs.dislikes,
             "maxCookMinutes": prefs.maxCookMinutes,
             "premium": premium,
+            // A couple of spare meals to swap in, so a meal you don't like doesn't mean a new plan.
+            "extraMeals": extraMealIdeas,
         ]
         if prefs.weeklyBudget > 0 {
             payload["budget"] = prefs.weeklyBudget
@@ -79,6 +81,19 @@ enum Backend {
         }
         let result = try await Functions.functions().httpsCallable("planMealsForStore").call(payload)
         return try decodePlan(result.data)
+    }
+
+    /// How many extra meal ideas each plan comes with.
+    static let extraMealIdeas = 2
+
+    /// Picks which meal ideas to cook. The backend rebuilds the grocery list and totals
+    /// from prices it already has (no new plan is used up) and returns the updated plan.
+    static func chooseMeals(planId: String, meals: [String]) async throws -> MealPlan {
+        let result = try await Functions.functions().httpsCallable("choosePlanMeals")
+            .call(["planId": planId, "meals": meals])
+        var plan = try decodePlan(result.data)
+        plan.applyChecked()
+        return plan
     }
 
     /// Plans this user has made, newest first.

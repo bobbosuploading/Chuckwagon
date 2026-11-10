@@ -4,7 +4,7 @@ import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import Anthropic from "@anthropic-ai/sdk";
-import { planMeals, PlanRequest } from "./plan";
+import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import { scanReceipt } from "./receipts";
 
 initializeApp();
@@ -153,6 +153,33 @@ export const planMealsForStore = onCall(
     }
   }
 );
+
+/**
+ * Picks which meal ideas to cook in a plan made with extraMeals, and rebuilds its grocery
+ * list and totals from the prices saved with it. No model call and no plan used up.
+ * Data: { planId, meals: [meal names] }. Returns the updated plan.
+ */
+export const choosePlanMeals = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const { planId, meals } = (request.data ?? {}) as { planId?: string; meals?: unknown };
+  if (!planId || !Array.isArray(meals)) throw new HttpsError("invalid-argument", "planId and meals are required");
+  const names = meals.filter((m): m is string => typeof m === "string").slice(0, 20);
+  const db = getFirestore();
+  const ref = db.collection("plans").doc(planId);
+  const snap = await ref.get();
+  if (!snap.exists || snap.get("uid") !== request.auth.uid) throw new HttpsError("not-found", "That plan wasn't found.");
+  const plan = snap.data() as MealPlan;
+  let picked;
+  try {
+    picked = chooseMeals(plan, names);
+  } catch (err) {
+    throw new HttpsError("failed-precondition", (err as Error).message);
+  }
+  // Firestore rejects undefined values; a plan without a budget has none to save.
+  const update = JSON.parse(JSON.stringify(picked));
+  await ref.update(update);
+  return { id: ref.id, ...plan, ...picked, checked: snap.get("checked") ?? [] };
+});
 
 /** Receipt scans cost about a third of a cent each (Haiku reading one photo). */
 const RECEIPT_LIMITS = { perUserPerDay: 10, allUsersPerDay: 500 };
