@@ -35,7 +35,8 @@ async function getJson<T>(url: string): Promise<T> {
 
 /** Keyword sort into our categories. "household" is never used for meals. */
 const CATEGORY_WORDS: [Category, RegExp][] = [
-  ["household", /detergent|laundry|tide|gain|oral care|crest|hair|server|flatware|foil pan|pans\b|paper towel|toilet|cleaner|diaper|shampoo|soap/i],
+  ["household", /detergent|laundry|tide|gain|oral care|crest|toothbrush|hair|server|flatware|foil pan|pans\b|paper towel|toilet|cleaner|diaper|huggies|pull-ups|shampoo|soap|batter(y|ies)|slow cooker|tableware|mystery box|cookware|clorox/i],
+  ["pantry", /chips|bars\b|fruit snacks|gushers|cereal|pasta|crackers|cookies|candy|soda/i],
   ["seafood", /shrimp|salmon|trout|tilapia|fish|crab|catfish|cod|tuna steak|scallop/i],
   ["frozen", /frozen|ice cream|pizza rolls|french fries/i],
   ["meat", /beef|chuck|steak|pork|chicken|turkey|ham\b|sausage|bacon|brisket|ribs|ground|tamales|wings|thighs|drumsticks/i],
