@@ -315,7 +315,7 @@ ${lines}`;
     const listedDealIds = new Set(listed.map((li) => li.dealId).filter(Boolean));
     const listedNames = new Set(listed.map((li) => norm(li.item)));
     // Basic spices are assumed, so "1 tsp chili powder" shouldn't add a $1.25 jar to a tight budget.
-    const BASIC_SPICES = "water, ice, basic spices, spices, chili powder, garlic powder, onion powder, paprika, cumin, oregano, dried herbs, seasoning";
+    const BASIC_SPICES = "basic spices, spices, chili powder, garlic powder, onion powder, paprika, cumin, oregano, dried herbs, seasoning";
     const atHome = `${req.haveAtHome || "salt, pepper, cooking oil, oil"}, ${BASIC_SPICES}`
       .split(",")
       .map(norm)
@@ -329,7 +329,7 @@ ${lines}`;
         // Loose match, so "Onion" counts as listed when "Onions" is, and "Pasta, any shape" when "Pasta" is.
         const name = norm(ing.item).replace(/s$/, "");
         const isListed = [...listedNames].some((n) => n.includes(name) || name.includes(n.replace(/s$/, "")));
-        if (!deal && (isListed || atHome.some((h) => name.includes(h)))) continue;
+        if (!deal && (isListed || name === "water" || atHome.some((h) => name.includes(h)))) continue;
         const existing = missing.get(key);
         if (existing) {
           existing.quantityNote += ` + ${ing.amount}`;
