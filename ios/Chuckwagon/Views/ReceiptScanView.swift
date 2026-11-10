@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 
 /// "Scan a receipt": a photo of a receipt teaches Chuckwagon a store's everyday prices,
-/// so meal plans can price the items that aren't on sale.
+/// so meal plans can price the items that aren't on sale. Sale prices are tagged and kept
+/// out of the everyday prices (functions/src/receiptSales.ts).
 struct ReceiptScanView: View {
     let store: Store
     @Environment(\.dismiss) private var dismiss
@@ -42,16 +43,15 @@ struct ReceiptScanView: View {
                     Section { rewardView(reward) }
                 }
                 if let result {
-                    Section("Learned \(result.items.count) prices") {
+                    Section {
                         ForEach(result.items, id: \.self) { item in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.name)
-                                    if let size = item.size { Text(size).font(.caption).foregroundStyle(.secondary) }
-                                }
-                                Spacer()
-                                Text(item.price.dollars + (item.soldBy == "WEIGHT" ? "/lb" : "")).bold()
-                            }
+                            itemRow(item)
+                        }
+                    } header: {
+                        Text("Learned \(result.items.count) prices")
+                    } footer: {
+                        if result.items.contains(where: { $0.salePrice != nil }) {
+                            Text("Sale prices don't count as everyday prices. We keep the regular price when we know it.")
                         }
                     }
                 }
@@ -87,6 +87,48 @@ struct ReceiptScanView: View {
             result = try await Backend.scanReceipt(storeId: storeId, image: image)
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    private func itemRow(_ item: Backend.ReceiptScan.Item) -> some View {
+        let per = item.soldBy == "WEIGHT" ? "/lb" : ""
+        return HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                if let size = item.size { Text(size).font(.caption).foregroundStyle(.secondary) }
+                if item.salePrice != nil {
+                    Text(item.saved == false ? "Sale. Regular price not known yet." : saleNote(item.saleReason))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if let sale = item.salePrice {
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("SALE")
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Theme.red, in: Capsule())
+                        Text(sale.dollars + per).bold().foregroundStyle(Theme.red)
+                    }
+                    if item.saved != false {
+                        Text("reg " + item.price.dollars + per)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text(item.price.dollars + per).bold()
+            }
+        }
+    }
+
+    private func saleNote(_ reason: String?) -> String {
+        switch reason {
+        case "ad": "In this week's ad."
+        case "below-usual": "Well below the usual price."
+        default: "Discount on the receipt."
         }
     }
 

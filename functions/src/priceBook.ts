@@ -4,6 +4,7 @@
  *
  *   priceBooks/{storeId}      written by a collector (Kroger API today). Replaced each run.
  *   receiptPrices/{storeId}   built from shoppers' scanned receipts. Merged, newest wins.
+ *                             Sale prices are kept out of `price` (see receiptSales.ts).
  *
  * Both docs hold an `items` array of PriceBookItem, kept small enough for one Firestore
  * document (1 MB), so a meal plan needs only one or two reads per store.
@@ -18,6 +19,8 @@ export interface PriceBookItem {
   price: number;
   /** Current promo price, if the item is on sale today. */
   promo?: number | null;
+  /** Receipts only: what it sold for on sale on seenAt. History, not a current promo. */
+  salePrice?: number | null;
   soldBy: "UNIT" | "WEIGHT";
   category: Category | null;
   source: "kroger-api" | "receipt" | "heb-apify";
@@ -112,7 +115,8 @@ export async function loadPriceBook(db: Firestore, storeId: string): Promise<Pri
     db.doc(`receiptPrices/${storeId}`).get(),
   ]);
   return [
-    ...(((receipts.get("items") as PriceBookItem[] | undefined) ?? [])),
+    // A sale on an old receipt is long over, so receipt items never carry a promo.
+    ...(((receipts.get("items") as PriceBookItem[] | undefined) ?? []).map((p) => ({ ...p, promo: null }))),
     ...(((book.get("items") as PriceBookItem[] | undefined) ?? [])),
   ];
 }

@@ -127,8 +127,15 @@ enum Backend {
         struct Item: Decodable, Hashable {
             var name: String
             var size: String?
+            /// Everyday price (the regular price when this was a sale and we know it).
             var price: Double
             var soldBy: String
+            /// What was paid, when it was a sale.
+            var salePrice: Double?
+            /// "receipt", "ad" or "below-usual" when it was a sale.
+            var saleReason: String?
+            /// False when it was a sale with no known regular price, so it wasn't saved.
+            var saved: Bool?
         }
         /// What the shopper earned for scanning.
         struct Reward: Decodable {
