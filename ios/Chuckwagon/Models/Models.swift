@@ -7,6 +7,21 @@ struct Store: Identifiable, Codable, Hashable {
     var chain: String
     var name: String
     var address: Address?
+    var zip: String?
+    var geo: Geo?
+
+    struct Geo: Codable, Hashable {
+        var lat: Double
+        var lng: Double
+    }
+
+    func distanceMiles(fromLat lat: Double, lng: Double) -> Double? {
+        guard let geo else { return nil }
+        let r = 3958.8, toRad = Double.pi / 180
+        let dLat = (geo.lat - lat) * toRad, dLng = (geo.lng - lng) * toRad
+        let a = sin(dLat / 2) * sin(dLat / 2) + cos(lat * toRad) * cos(geo.lat * toRad) * sin(dLng / 2) * sin(dLng / 2)
+        return 2 * r * asin(min(1, sqrt(a)))
+    }
 
     struct Address: Codable, Hashable {
         var addressLine1: String?

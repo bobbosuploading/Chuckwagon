@@ -15,7 +15,7 @@ struct OnboardingView: View {
                     .buttonStyle(BigButtonStyle())
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
-                    .disabled(prefs.favoriteStoreIds.isEmpty)
+                    .disabled(prefs.zip.isEmpty)
                 }
         }
     }
@@ -53,15 +53,21 @@ struct PreferencesForm: View {
                     .listRowBackground(Color.clear)
                 }
             }
+            AreaSection()
+
             if showsStores {
                 Section {
                     if stores.isEmpty && loadError == nil {
                         ProgressView()
+                    } else if !stores.isEmpty && prefs.nearby(stores).isEmpty {
+                        Text("No stores near \(prefs.zip) yet. We're gathering deals for your area.")
+                            .font(Theme.body(.footnote))
+                            .foregroundStyle(Theme.ink.opacity(0.7))
                     }
                     if let loadError {
                         Text(loadError).foregroundStyle(.secondary)
                     }
-                    ForEach(stores) { store in
+                    ForEach(prefs.nearby(stores)) { store in
                         let id = store.id ?? ""
                         Button {
                             if let i = prefs.favoriteStoreIds.firstIndex(of: id) {
@@ -85,7 +91,7 @@ struct PreferencesForm: View {
                 } header: {
                     Text("Your stores")
                 } footer: {
-                    Text("H-E-B and more stores are coming.")
+                    Text("Stores within about 30 miles of your ZIP.")
                 }
             }
 

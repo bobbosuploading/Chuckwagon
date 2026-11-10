@@ -56,6 +56,42 @@ async function reservePlan(db: Firestore, uid: string, premium: boolean): Promis
   });
 }
 
+/** During testing, deals are collected for at most this many areas (ZIP codes). */
+const MAX_AREAS = 15;
+
+/**
+ * Adds a shopper's ZIP to areas/{zip}, the list of places the collectors cover.
+ * Returns "ready" if deals are already collected there, "pending" if the first
+ * collection still has to run, or "waitlist" if the beta is full.
+ */
+export const registerArea = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const zip = String(request.data?.zip ?? "").trim();
+  if (!/^\d{5}$/.test(zip)) throw new HttpsError("invalid-argument", "Please send a 5-digit ZIP code");
+  const db = getFirestore();
+  const uid = request.auth.uid;
+  const status = await db.runTransaction(async (tx) => {
+    const ref = db.collection("areas").doc(zip);
+    const area = await tx.get(ref);
+    const now = new Date().toISOString();
+    if (area.exists) {
+      tx.update(ref, { users: FieldValue.arrayUnion(uid), lastRequestedAt: now });
+      return area.get("status") as string;
+    }
+    // Areas we already collect for (like the original El Campo ZIP) count as ready.
+    const [byZip, byAddress] = await Promise.all([
+      tx.get(db.collection("stores").where("zip", "==", zip).limit(1)),
+      tx.get(db.collection("stores").where("address.zipCode", "==", zip).limit(1)),
+    ]);
+    const active = await tx.get(db.collection("areas").where("status", "in", ["ready", "pending"]).count());
+    const status = !byZip.empty || !byAddress.empty ? "ready" : active.data().count >= MAX_AREAS ? "waitlist" : "pending";
+    tx.set(ref, { zip, status, users: [uid], createdAt: now, lastRequestedAt: now });
+    return status;
+  });
+  logger.info("Area registered", { zip, status });
+  return { status };
+});
+
 /**
  * Unlocks premium for testers. Codes live in codes/{CODE} (create them in the Firebase console):
  *   premium: true, maxUses: 25, uses: 0, expiresAt: "2027-02-01" (optional)

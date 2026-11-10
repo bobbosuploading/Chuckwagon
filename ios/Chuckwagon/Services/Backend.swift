@@ -14,6 +14,14 @@ enum Backend {
         }
     }
 
+    /// Adds the shopper's ZIP to the list of areas we collect deals for.
+    /// Returns "ready", "pending" (first collection on its way) or "waitlist" (beta is full).
+    @discardableResult
+    static func registerArea(zip: String) async throws -> String {
+        let result = try await Functions.functions().httpsCallable("registerArea").call(["zip": zip])
+        return (result.data as? [String: Any])?["status"] as? String ?? "pending"
+    }
+
     /// Whether this account has premium (set only by the backend).
     static func isPremium() async throws -> Bool {
         guard let uid = Auth.auth().currentUser?.uid else { return false }

@@ -15,8 +15,9 @@ struct HomeView: View {
     @State private var showingPlans = false
 
     private var myStores: [Store] {
-        let favs = stores.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
-        return favs.isEmpty ? stores : favs
+        let near = prefs.nearby(stores)
+        let favs = near.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
+        return favs.isEmpty ? near : favs
     }
 
     private var currentStore: Store? { stores.first { $0.id == storeId } }
