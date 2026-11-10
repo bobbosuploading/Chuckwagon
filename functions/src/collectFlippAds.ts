@@ -1,5 +1,6 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import type { Deal } from "./collectKroger";
+import { withStockUp } from "./stockUp";
 import { toHebDeal } from "./collectHeb";
 
 /**
@@ -110,7 +111,7 @@ export async function collectFlippAds(zip: string, chains = AD_CHAINS, dryRun = 
       source: "flipp",
       updatedAt: now,
     }, { merge: true });
-    for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), d);
+    for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), withStockUp(d));
     await writer.flush();
     const stale = await db.collection("deals").where("storeId", "==", storeId).where("fetchedAt", "<", now).get();
     stale.forEach((d) => writer.delete(d.ref));

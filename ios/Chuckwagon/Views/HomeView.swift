@@ -6,6 +6,7 @@ struct HomeView: View {
     @State private var stores: [Store] = []
     @State private var storeId: String?
     @State private var category: DealCategory?
+    @State private var stockUpOnly = false
     @State private var search = ""
     @State private var deals: [Deal] = []
     @State private var loading = false
@@ -24,8 +25,9 @@ struct HomeView: View {
     private var currentStore: Store? { stores.first { $0.id == storeId } }
 
     private var visibleDeals: [Deal] {
-        guard !search.isEmpty else { return deals }
-        return deals.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        var shown = stockUpOnly ? deals.filter { $0.stockUp != nil } : deals
+        if !search.isEmpty { shown = shown.filter { $0.name.localizedCaseInsensitiveContains(search) } }
+        return shown
     }
 
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
@@ -156,7 +158,11 @@ struct HomeView: View {
     private var categoryChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip("All", symbol: "square.grid.2x2.fill", selected: category == nil) { category = nil }
+                chip("All", symbol: "square.grid.2x2.fill", selected: category == nil && !stockUpOnly) {
+                    category = nil
+                    stockUpOnly = false
+                }
+                chip("Stock up", symbol: "shippingbox.fill", selected: stockUpOnly) { stockUpOnly.toggle() }
                 ForEach(DealCategory.allCases) { c in
                     chip(c.label, symbol: c.symbol, selected: category == c) { category = c }
                 }
@@ -192,8 +198,14 @@ struct HomeView: View {
                 .card()
                 .padding(.horizontal, 20)
         } else if visibleDeals.isEmpty {
-            ContentUnavailableView("No deals found", systemImage: "tag.slash")
-                .padding(.top, 40)
+            if stockUpOnly {
+                ContentUnavailableView("No stock-up prices", systemImage: "shippingbox",
+                                       description: Text("Nothing here is cheap enough to buy extra of right now. We flag items that are about 30% off or more and keep well."))
+                    .padding(.top, 40)
+            } else {
+                ContentUnavailableView("No deals found", systemImage: "tag.slash")
+                    .padding(.top, 40)
+            }
         } else {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(visibleDeals) { DealCard(deal: $0) }
@@ -271,6 +283,9 @@ struct DealCard: View {
                     .font(Theme.body(.caption2, weight: .medium))
                     .foregroundStyle(Theme.red)
                     .lineLimit(3)
+            }
+            if let tip = deal.stockUp {
+                StockUpBadge(tip: tip)
             }
         }
         .padding(10)

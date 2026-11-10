@@ -23,6 +23,9 @@ on:
       budget:
         description: "Budget in dollars (blank for none)"
         default: ""
+      store:
+        description: "Store id (blank for the first store)"
+        default: ""
 
 jobs:
   plan:
@@ -55,3 +58,4 @@ jobs:
           DIET: ${{ inputs.diet }}
           DISLIKES: ${{ inputs.dislikes }}
           BUDGET: ${{ inputs.budget }}
+          STORE_ID: ${{ inputs.store }}

@@ -64,6 +64,9 @@ enum Backend {
             "maxCookMinutes": prefs.maxCookMinutes,
             "premium": premium,
         ]
+        if prefs.weeklyBudget > 0 {
+            payload["budget"] = prefs.weeklyBudget
+        }
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
         }

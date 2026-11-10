@@ -1,5 +1,6 @@
 import { Firestore, getFirestore, Timestamp } from "firebase-admin/firestore";
 import type { Deal } from "./collectKroger";
+import { withStockUp } from "./stockUp";
 import {
   Category,
   SEARCH_TERMS,
@@ -237,7 +238,7 @@ export async function collectWalmartDeals(auth: WalmartAuth, zip: string, dryRun
     };
     writer.set(db.doc(`walmartPrices/${zip}_${it.itemId}`), doc);
   }
-  for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), d);
+  for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), withStockUp(d));
   await writer.flush();
 
   const stale = await db.collection("deals").where("storeId", "==", storeId).where("fetchedAt", "<", now).get();
