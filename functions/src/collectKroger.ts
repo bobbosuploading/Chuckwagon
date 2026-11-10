@@ -72,7 +72,11 @@ function toPriceBookItem(p: KrogerProduct, category: Category, seenAt: string): 
   if (!(regular > 0)) return null;
   const promo = item?.price?.promo ?? 0;
   return {
-    name: [p.brand, p.description].filter(Boolean).join(" ").slice(0, 90),
+    // Kroger descriptions usually start with the brand already ("Kroger® Salted Butter").
+    name: (p.brand && !p.description.toLowerCase().startsWith(p.brand.toLowerCase())
+      ? `${p.brand} ${p.description}`
+      : p.description
+    ).slice(0, 90),
     size: item?.size ?? null,
     price: regular,
     promo: promo > 0 && promo < regular ? promo : null,

@@ -30,7 +30,7 @@ function toMarkdown(p: MealPlan): string {
   for (const li of [...p.groceryList].sort((a, b) => a.aisle.localeCompare(b.aisle))) {
     if (li.aisle !== aisle) out.push(`\n**${(aisle = li.aisle)}**`);
     const price = li.onSale
-      ? ` · sale $${li.salePrice?.toFixed(2)} (reg $${li.regularPrice?.toFixed(2)})${li.lineSavings ? `, save $${li.lineSavings.toFixed(2)}` : ""}`
+      ? ` · sale ${li.salePrice != null ? `$${li.salePrice.toFixed(2)}` : "(ad deal)"}${li.regularPrice != null ? ` (reg $${li.regularPrice.toFixed(2)})` : ""}${li.lineSavings ? `, save $${li.lineSavings.toFixed(2)}` : ""}`
       : li.lineTotal !== null
         ? ` · regular $${li.lineTotal.toFixed(2)}${li.priceSource === "estimate" ? " (estimate)" : ""} as ${li.pricedAs}`
         : " · regular price (no price found)";

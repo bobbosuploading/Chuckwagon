@@ -20,11 +20,26 @@ export interface AdChain {
 }
 
 export const AD_CHAINS: AdChain[] = [
+  // ALDI was not on Flipp near 77437 (Nov 2026), so it loads nothing there for now.
   { key: "aldi", chain: "ALDI", merchant: /^aldi\b/i },
   { key: "dollargeneral", chain: "Dollar General", merchant: /dollar general/i },
 ];
 
 interface FlippFlyer { id: number; merchant: string; name?: string; valid_from: string; valid_to: string }
+
+/**
+ * Dollar General's ad is mostly non-food. These go to "household" so the meal planner
+ * never sees them; drinks and coffee go to "pantry" (the H-E-B word list would call
+ * "Dr Pepper" produce and "ground coffee" meat).
+ */
+const NON_FOOD = /holiday|ornament|gift|greeting card|tissue paper|bows\b|lights|tree topper|stocking|plush|tees\b|napkin|plates|plastic cups|paper cups|cutlery|batter(y|ies)|mobile|samsung|phone|vitamin|zinc|mucinex|delsym|biofreeze|toothpaste|colgate|body wash|soap|deodorant|shampoo|lotion|cleaner|febreze|detergent|laundry|fabric softener|beauty|stp\b|motor|pet food|cat food|dog food|cat litter|dog treats|toy/i;
+const DRINKS = /coffee|soda|cola|dr pepper|7up|sunkist|canada dry|a&w|mountain dew|pepsi|coke|sprite|gatorade|water\b|juice|tea\b|beer|budweiser|bud light|coors|miller|michelob|wine/i;
+
+function adCategory(name: string, fallback: Deal["category"]): Deal["category"] {
+  if (NON_FOOD.test(name)) return "household";
+  if (DRINKS.test(name)) return "pantry";
+  return fallback;
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
@@ -62,7 +77,8 @@ export async function collectFlippAds(zip: string, chains = AD_CHAINS, dryRun = 
         try {
           const { item } = await getJson<{ item: Parameters<typeof toHebDeal>[0] }>(`${FLIPP}/items/${id}?locale=en-us`);
           if (!item?.name) continue;
-          const deal: Deal = { ...toHebDeal(item, storeId, now), chain: c.chain };
+          const base = toHebDeal(item, storeId, now);
+          const deal: Deal = { ...base, chain: c.chain, category: adCategory(base.name, base.category) };
           // Skip ad tiles with no price and no promo (banners, "see store for details").
           if (deal.salePrice === null && !deal.promo) continue;
           const key = deal.name.toLowerCase();
