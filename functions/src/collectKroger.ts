@@ -22,11 +22,16 @@ export interface Deal {
   category: Category;
   krogerCategories: string[];
   imageUrl: string | null;
-  regularPrice: number;
-  salePrice: number;
-  savings: number;
+  /** Null when the ad doesn't say (H-E-B often lists only a promo). */
+  regularPrice: number | null;
+  salePrice: number | null;
+  savings: number | null;
   pctOff: number;
-  source: "kroger-api";
+  /** Ad text such as "Buy 2 get 1 free with yellow coupon". */
+  promo?: string | null;
+  /** When the sale ends (ISO date), if known. */
+  validTo?: string;
+  source: "kroger-api" | "flipp";
   fetchedAt: Timestamp;
 }
 

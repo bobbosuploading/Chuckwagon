@@ -30,10 +30,12 @@ struct Deal: Identifiable, Codable, Hashable {
     var soldBy: String?
     var category: String
     var imageUrl: String?
-    var regularPrice: Double
-    var salePrice: Double
-    var savings: Double
+    var regularPrice: Double?
+    var salePrice: Double?
+    var savings: Double?
     var pctOff: Int
+    /// Ad text when there's no simple price, e.g. "Buy 2, get pasta free".
+    var promo: String?
 
     var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
 }

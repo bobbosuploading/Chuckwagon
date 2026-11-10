@@ -105,7 +105,10 @@ Rules:
 function dealLine(d: Deal, id: string): string {
   const size = d.size ? ` | ${d.size}` : "";
   const per = d.soldBy === "WEIGHT" ? "/lb" : "";
-  return `- id=${id} | ${d.name}${size} | sale $${d.salePrice.toFixed(2)}${per} | regular $${d.regularPrice.toFixed(2)}${per} | ${d.category}`;
+  const sale = d.salePrice !== null ? ` | sale $${d.salePrice.toFixed(2)}${per}` : "";
+  const regular = d.regularPrice !== null ? ` | regular $${d.regularPrice.toFixed(2)}${per}` : "";
+  const promo = d.promo ? ` | deal: ${d.promo.slice(0, 160)}` : "";
+  return `- id=${id} | ${d.name}${size}${sale}${regular}${promo} | ${d.category}`;
 }
 
 export interface PricedListItem {
@@ -246,8 +249,9 @@ ${lines}`;
     // Weight-priced items have per-lb prices, so multiply by the estimated pounds instead of the package count.
     const byWeight = deal.soldBy === "WEIGHT";
     const qty = byWeight ? li.pounds : li.buyCount;
-    const lineTotal = qty ? round2(deal.salePrice * qty) : null;
-    const lineSavings = qty ? round2(deal.savings * qty) : null;
+    const lineTotal = qty && deal.salePrice !== null ? round2(deal.salePrice * qty) : null;
+    const lineSavings = qty && deal.savings !== null ? round2(deal.savings * qty) : null;
+    if (lineTotal === null) itemsNotPriced++;
     if (lineTotal !== null) saleItems += lineTotal;
     if (lineSavings !== null) savings += lineSavings;
     return {

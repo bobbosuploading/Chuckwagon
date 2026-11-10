@@ -224,7 +224,16 @@ struct DealCard: View {
                 .padding(10)
                 .background(Theme.cream.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                SaleTag(pct: deal.pctOff).padding(6)
+                if deal.pctOff > 0 {
+                    SaleTag(pct: deal.pctOff).padding(6)
+                } else if deal.promo != nil {
+                    Text("DEAL")
+                        .font(.system(size: 12, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.mustard, in: Capsule())
+                        .padding(6)
+                }
             }
 
             Text(deal.name)
@@ -235,14 +244,24 @@ struct DealCard: View {
                 Text(size).font(Theme.body(.caption)).foregroundStyle(Theme.ink.opacity(0.55)).lineLimit(1)
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(deal.salePrice.dollars + deal.perUnit)
-                    .font(.system(.title3, design: .rounded, weight: .heavy))
+            if let sale = deal.salePrice {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(sale.dollars + deal.perUnit)
+                        .font(.system(.title3, design: .rounded, weight: .heavy))
+                        .foregroundStyle(Theme.red)
+                    if let regular = deal.regularPrice {
+                        Text(regular.dollars)
+                            .font(Theme.body(.caption))
+                            .strikethrough()
+                            .foregroundStyle(Theme.ink.opacity(0.45))
+                    }
+                }
+            }
+            if let promo = deal.promo {
+                Text(promo)
+                    .font(Theme.body(.caption2, weight: .medium))
                     .foregroundStyle(Theme.red)
-                Text(deal.regularPrice.dollars)
-                    .font(Theme.body(.caption))
-                    .strikethrough()
-                    .foregroundStyle(Theme.ink.opacity(0.45))
+                    .lineLimit(3)
             }
         }
         .padding(10)
