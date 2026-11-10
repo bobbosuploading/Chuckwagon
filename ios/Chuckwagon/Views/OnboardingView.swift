@@ -57,6 +57,9 @@ struct PreferencesForm: View {
 
             if showsStores {
                 Section {
+                    Picker("Show stores within", selection: $prefs.storeRadius) {
+                        ForEach(Preferences.radiusChoices, id: \.self) { Text("\($0) miles").tag($0) }
+                    }
                     if stores.isEmpty && loadError == nil {
                         ProgressView()
                     } else if !stores.isEmpty && prefs.nearby(stores).isEmpty {
@@ -94,7 +97,7 @@ struct PreferencesForm: View {
                 } header: {
                     Text("Your stores")
                 } footer: {
-                    Text("Stores within about 30 miles of your ZIP. Chains price by region, so some stores show prices from a nearby store of the same chain; it says so under the store. Walmart prices come from walmart.com for your area and can differ a little on the shelf.")
+                    Text("Stores within about \(prefs.storeRadius) miles of your ZIP. Chains price by region, so some stores show prices from a nearby store of the same chain; it says so under the store. Walmart prices come from walmart.com for your area and can differ a little on the shelf.")
                 }
             }
 

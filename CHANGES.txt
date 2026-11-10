@@ -6,6 +6,15 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 4 (0.1.0)
+========================================
+What's new since build 3:
+
+- Store distance: in Settings, under "Your stores", pick how far to look for stores (10, 20, 30 or 50 miles). It starts at 30.
+
+Please try: switching to 50 miles and checking that farther stores show up, then back to 10.
+
+========================================
 Build 3 (0.1.0)
 ========================================
 [App Check is only in this build if PR #10 is merged before the build is made.
