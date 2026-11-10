@@ -46,7 +46,37 @@ enum Backend {
             payload["haveAtHome"] = haveAtHome
         }
         let result = try await Functions.functions().httpsCallable("planMealsForStore").call(payload)
-        let data = try JSONSerialization.data(withJSONObject: result.data)
+        return try decodePlan(result.data)
+    }
+
+    /// Plans this user has made, newest first.
+    static func myPlans() async throws -> [MealPlan] {
+        guard let uid = Auth.auth().currentUser?.uid else { return [] }
+        let snap = try await db.collection("plans")
+            .whereField("uid", isEqualTo: uid)
+            .order(by: "createdAt", descending: true)
+            .limit(to: 30)
+            .getDocuments()
+        return snap.documents.compactMap { doc in
+            var data = doc.data()
+            data["id"] = doc.documentID
+            var plan = try? decodePlan(data)
+            plan?.applyChecked()
+            return plan
+        }
+    }
+
+    /// Saves which grocery items are checked off.
+    static func saveChecked(planId: String, itemIds: [String]) async throws {
+        try await db.collection("plans").document(planId).updateData(["checked": itemIds])
+    }
+
+    static func deletePlan(id: String) async throws {
+        try await db.collection("plans").document(id).delete()
+    }
+
+    private static func decodePlan(_ object: Any) throws -> MealPlan {
+        let data = try JSONSerialization.data(withJSONObject: object)
         return try JSONDecoder().decode(MealPlan.self, from: data)
     }
 }

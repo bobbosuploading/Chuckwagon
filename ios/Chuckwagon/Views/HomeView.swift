@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var error: String?
     @State private var showingHeadedTo = false
     @State private var showingSettings = false
+    @State private var showingPlans = false
 
     private var myStores: [Store] {
         let favs = stores.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
@@ -49,7 +50,8 @@ struct HomeView: View {
                         Label("Change store", systemImage: "storefront.fill")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
                     Button { showingSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }
@@ -67,6 +69,7 @@ struct HomeView: View {
             .sheet(isPresented: $showingHeadedTo) {
                 if let store = currentStore { HeadedToView(store: store) }
             }
+            .sheet(isPresented: $showingPlans) { MyPlansView() }
             .sheet(isPresented: $showingSettings) {
                 NavigationStack {
                     PreferencesForm(showsStores: true)

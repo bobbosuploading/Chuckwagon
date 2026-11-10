@@ -66,6 +66,22 @@ struct MealPlan: Codable, Identifiable, Hashable {
     var groceryList: [ListItem]
     var notes: String
     var totals: Totals
+    var createdAt: String?
+    /// Ids of grocery items the user has checked off (saved in Firestore as `checked`).
+    var checked: [String]?
+
+    var createdDate: Date? {
+        guard let createdAt else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: createdAt)
+    }
+
+    /// Copies saved check marks onto the grocery list.
+    mutating func applyChecked() {
+        let ids = Set(checked ?? [])
+        for i in groceryList.indices { groceryList[i].checked = ids.contains(groceryList[i].id) }
+    }
 
     struct Meal: Codable, Hashable, Identifiable {
         var id: String { name }

@@ -10,6 +10,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    // Each user can see and delete their own meal plans, and save check marks.
+    // Plans are created only by the backend.
+    match /plans/{planId} {
+      allow read, delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow update: if request.auth != null && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checked']);
+      allow create: if false;
+    }
     // Everything else (run logs, etc.) is backend-only.
     match /{document=**} {
       allow read, write: if false;

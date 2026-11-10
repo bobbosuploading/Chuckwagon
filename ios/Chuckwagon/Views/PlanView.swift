@@ -52,6 +52,9 @@ struct PlanView: View {
             }
         }
         .creamBackground()
+        .onChange(of: plan.groceryList.filter(\.checked).map(\.id)) { _, ids in
+            Task { try? await Backend.saveChecked(planId: plan.id, itemIds: ids) }
+        }
     }
 
     private var savingsHeader: some View {
