@@ -19,9 +19,17 @@ final class Preferences {
     var zip: String { didSet { defaults.set(zip, forKey: "zip") } }
     var latitude: Double { didSet { defaults.set(latitude, forKey: "latitude") } }
     var longitude: Double { didSet { defaults.set(longitude, forKey: "longitude") } }
+    /// How far from the ZIP to show stores, in miles.
+    var storeRadius: Int { didSet { defaults.set(storeRadius, forKey: "storeRadius") } }
+
+    /// Radius choices. The collectors look 50 miles out from each area, so going past 50
+    /// would show nothing new without pulling more data.
+    static let radiusChoices = [10, 20, 30, 50]
+    static let defaultRadius = 30
 
     /// Stores to show: near the shopper's ZIP, or all of them if no ZIP is set yet.
-    func nearby(_ stores: [Store], miles: Double = 30) -> [Store] {
+    func nearby(_ stores: [Store]) -> [Store] {
+        let miles = Double(storeRadius)
         guard !zip.isEmpty else { return stores }
         return stores.filter { store in
             if store.coordinate != nil, latitude != 0 {
@@ -49,5 +57,7 @@ final class Preferences {
         zip = defaults.string(forKey: "zip") ?? ""
         latitude = defaults.double(forKey: "latitude")
         longitude = defaults.double(forKey: "longitude")
+        let radius = defaults.object(forKey: "storeRadius") as? Int ?? Self.defaultRadius
+        storeRadius = Self.radiusChoices.contains(radius) ? radius : Self.defaultRadius
     }
 }
