@@ -78,3 +78,20 @@ The workflow skips itself until these repository secrets exist:
 | `WALMART_PUBLISHER_ID` | Optional: your Impact publisher ID, for affiliate links |
 
 Try it first with **Actions > Collect Walmart prices > Run workflow** (dry run is on by default).
+
+## H-E-B everyday prices (beta only)
+
+H-E-B has no API. For the beta, `.github/workflows/collect-heb-prices.yml` runs once a month (the 2nd)
+and fetches shelf prices for about 80 staple ingredients (711 products) at the H-E-B nearest the home
+ZIP through a third-party Apify scraper (`zaiq/heb-scraper`, about $0.006 per product). That fits
+Apify's free plan ($5 of usage a month), and each run is capped so it can't cost more. Prices are
+merged into `priceBooks/heb-{zip}` and kept for 120 days; meal plans use them for items that aren't
+on sale, and fall back to a Kroger estimate for anything H-E-B's list doesn't have.
+
+This scrapes heb.com, which H-E-B's terms don't allow. Use it for TestFlight only and turn it off
+before a paid launch: set the repository variable `HEB_PRICES_ENABLED` to `false`
+(Settings > Secrets and variables > Actions > Variables).
+
+Setup: make a free account at apify.com, copy your API token (Settings > API & Integrations), and
+save it as the repository secret `APIFY_TOKEN`. Then try **Actions > Collect H-E-B everyday prices >
+Run workflow** (dry run, 20 products, about 14 cents).
