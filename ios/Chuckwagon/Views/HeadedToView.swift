@@ -17,12 +17,22 @@ struct HeadedToView: View {
                 if let plan {
                     PlanView(plan: plan)
                 } else if planning {
-                    VStack(spacing: 16) {
-                        ProgressView().controlSize(.large)
-                        Text("Rustling up supper from this week's deals…")
-                            .foregroundStyle(.secondary)
+                    VStack(spacing: 18) {
+                        Image(systemName: "frying.pan.fill")
+                            .font(.system(size: 44))
+                            .foregroundStyle(Theme.red)
+                            .symbolEffect(.bounce, options: .repeating)
+                        Text("Rustling up supper…")
+                            .font(Theme.title(24))
+                            .foregroundStyle(Theme.ink)
+                        Text("Matching this week's deals to meals your family will like.")
+                            .font(Theme.body(.subheadline))
+                            .foregroundStyle(Theme.ink.opacity(0.6))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.cream.ignoresSafeArea())
                 } else {
                     form
                 }
@@ -36,11 +46,24 @@ struct HeadedToView: View {
     }
 
     private var form: some View {
-        Form {
+        @Bindable var prefs = prefs
+        return Form {
             Section {
                 LabeledContent("Store", value: store.name)
-                LabeledContent("Meals", value: "\(prefs.mealCount) for \(prefs.householdSize) people")
-                LabeledContent("Diet", value: prefs.diet)
+                Stepper("Meals: \(prefs.mealCount)", value: $prefs.mealCount, in: 1...7)
+                Stepper("People: \(prefs.householdSize)", value: $prefs.householdSize, in: 1...10)
+                Picker("Diet", selection: $prefs.diet) {
+                    ForEach(Preferences.diets, id: \.self) { Text($0) }
+                }
+                Picker("Cooking time", selection: $prefs.maxCookMinutes) {
+                    Text("Quick (30 min)").tag(30)
+                    Text("Normal (45 min)").tag(45)
+                    Text("I like to cook (90 min)").tag(90)
+                }
+            } header: {
+                Text("This trip")
+            } footer: {
+                Text("Changes here are saved for next time too.")
             }
             Section {
                 TextField("e.g. rice, eggs, onions", text: $haveAtHome, axis: .vertical)
@@ -55,13 +78,17 @@ struct HeadedToView: View {
             if let error {
                 Section { Text(error).foregroundStyle(.red) }
             }
-            Section {
-                Button {
-                    Task { await makePlan() }
-                } label: {
-                    Text("Plan my meals").font(.headline).frame(maxWidth: .infinity)
-                }
+        }
+        .creamBackground()
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                Task { await makePlan() }
+            } label: {
+                Label("Plan my meals", systemImage: "sparkles")
             }
+            .buttonStyle(BigButtonStyle())
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
         }
     }
 

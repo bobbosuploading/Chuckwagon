@@ -39,7 +39,7 @@ struct PlanView: View {
                         MealDetailView(meal: meal)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(meal.name).font(.headline)
+                            Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
                             Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter { $0.dealId != nil }.count) sale items")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -48,23 +48,29 @@ struct PlanView: View {
             }
 
             if !plan.notes.isEmpty {
-                Section("Notes") { Text(plan.notes).font(.callout) }
+                Section("Notes") { Text(plan.notes).font(Theme.body(.callout)) }
             }
         }
+        .creamBackground()
     }
 
     private var savingsHeader: some View {
         HStack {
-            VStack(alignment: .leading) {
-                Text("You save").font(.caption).foregroundStyle(.secondary)
-                Text(plan.totals.savings.dollars).font(.title2.bold()).foregroundStyle(Color.chuckRed)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("YOU SAVE").font(.system(size: 12, weight: .heavy, design: .rounded)).tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.85))
+                Text(plan.totals.savings.dollars).font(Theme.title(34)).foregroundStyle(.white)
             }
             Spacer()
-            VStack(alignment: .trailing) {
-                Text("Sale items").font(.caption).foregroundStyle(.secondary)
-                Text(plan.totals.saleItems.dollars).font(.title3.bold())
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(plan.meals.count) meals").font(Theme.body(.subheadline, weight: .bold)).foregroundStyle(.white)
+                Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
             }
         }
+        .padding(18)
+        .background(Theme.red, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
     }
 }
 
@@ -77,7 +83,7 @@ struct ListItemRow: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(item.checked ? Color.chuckRed : .secondary)
+                    .foregroundStyle(item.checked ? Theme.sage : Theme.ink.opacity(0.35))
                     .font(.title3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.item).strikethrough(item.checked).foregroundStyle(item.checked ? .secondary : .primary)
@@ -113,7 +119,11 @@ struct MealDetailView: View {
                         Text("\(ing.amount) \(ing.item)")
                         Spacer()
                         if ing.dealId != nil {
-                            Text("ON SALE").font(.caption2.bold()).foregroundStyle(Color.chuckRed)
+                            Text("ON SALE")
+                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .foregroundStyle(Theme.ink)
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(Theme.mustard, in: Capsule())
                         }
                     }
                 }
@@ -127,6 +137,7 @@ struct MealDetailView: View {
                 }
             }
         }
+        .creamBackground()
         .navigationTitle(meal.name)
         .navigationBarTitleDisplayMode(.inline)
     }

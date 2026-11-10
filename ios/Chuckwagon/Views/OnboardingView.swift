@@ -6,20 +6,15 @@ struct OnboardingView: View {
 
     var body: some View {
         NavigationStack {
-            PreferencesForm(showsStores: true)
-                .navigationTitle("Welcome to Chuckwagon")
+            PreferencesForm(showsStores: true, showsWelcome: true)
+                .toolbar(.hidden, for: .navigationBar)
                 .safeAreaInset(edge: .bottom) {
-                    Button {
+                    Button("Start saving") {
                         prefs.hasOnboarded = true
-                    } label: {
-                        Text("Start saving")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding()
-                    .background(.bar)
+                    .buttonStyle(BigButtonStyle())
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
                     .disabled(prefs.favoriteStoreIds.isEmpty)
                 }
         }
@@ -30,12 +25,34 @@ struct OnboardingView: View {
 struct PreferencesForm: View {
     @Environment(Preferences.self) private var prefs
     var showsStores: Bool
+    var showsWelcome = false
     @State private var stores: [Store] = []
     @State private var loadError: String?
 
     var body: some View {
         @Bindable var prefs = prefs
         Form {
+            if showsWelcome {
+                Section {
+                    VStack(spacing: 10) {
+                        Image(systemName: "frying.pan.fill")
+                            .font(.system(size: 38))
+                            .foregroundStyle(.white)
+                            .frame(width: 84, height: 84)
+                            .background(Theme.red, in: Circle())
+                            .overlay(Circle().stroke(Theme.mustard, lineWidth: 4))
+                        Text("Chuckwagon")
+                            .font(Theme.title(34))
+                            .foregroundStyle(Theme.ink)
+                        Text("Supper from this week's sales")
+                            .font(Theme.body(.subheadline, weight: .medium))
+                            .foregroundStyle(Theme.ink.opacity(0.65))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .listRowBackground(Color.clear)
+                }
+            }
             if showsStores {
                 Section {
                     if stores.isEmpty && loadError == nil {
@@ -94,6 +111,9 @@ struct PreferencesForm: View {
                 Text("Allergies are never included in any meal.")
             }
         }
+        .creamBackground()
+        .font(Theme.body())
+        .foregroundStyle(Theme.ink)
         .task {
             guard showsStores else { return }
             do { stores = try await Backend.stores() } catch { loadError = error.localizedDescription }

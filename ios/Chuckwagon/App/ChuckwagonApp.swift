@@ -13,7 +13,8 @@ struct ChuckwagonApp: App {
         WindowGroup {
             RootView()
                 .environment(prefs)
-                .tint(.chuckRed)
+                .tint(Theme.red)
+                .preferredColorScheme(.light)
         }
     }
 }
@@ -39,9 +40,4 @@ struct RootView: View {
             Text(signInError ?? "")
         }
     }
-}
-
-extension Color {
-    /// Chuckwagon brand red.
-    static let chuckRed = Color(red: 0.70, green: 0.23, blue: 0.17)
 }
