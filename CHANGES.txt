@@ -1,0 +1,40 @@
+CHUCKWAGON: WHAT'S NEW IN EACH TESTFLIGHT BUILD
+
+Newest build first. Copy the lines under a build's heading into TestFlight's
+"What to Test" box. Lines in [square brackets] are notes for us, not for testers.
+The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
+it goes up, add a new "Build N" section at the top of this list.
+
+========================================
+Build 3 (0.1.0)
+========================================
+[App Check is only in this build if PR #10 is merged before the build is made.
+It works behind the scenes, so there is nothing for testers to try.]
+
+What's new since the first build:
+
+- Your location: tap "Use my location" or type a ZIP code to set your stores. Nearby stores share prices from one store in the same chain region.
+- Budget-first planning: set a weekly budget and the plan stays under it.
+- Stock-up tips: a heads-up when a deal is good enough to buy extra.
+- Send to cart: Kroger adds items straight to your cart, Walmart gets an add-to-cart link, and H-E-B and the other stores get "Share list" (sorted by aisle) to Reminders, Notes or Messages.
+- More stores and prices: Walmart, ALDI and Dollar General ads, plus everyday prices. All 31 H-E-B ad deals now show, tagged "DEAL" where no regular price is listed.
+- Receipt rewards: each scanned receipt earns an extra plan, and 3 receipts earn a Chef's pick.
+
+Please try: setting your ZIP, making a plan with a budget, and sending a list to your store. Tell us about anything that looks wrong or confusing.
+
+========================================
+Build 2 (0.1.0)
+========================================
+[A re-upload of build 1. Nothing changed.]
+
+Same as build 1.
+
+========================================
+Build 1 (0.1.0)
+========================================
+First TestFlight build.
+
+- See this week's sale items at your store.
+- Get a meal plan and grocery list built from those deals.
+- Sign in with Apple, or try it without an account.
+- Enter a tester code to unlock premium plans.
