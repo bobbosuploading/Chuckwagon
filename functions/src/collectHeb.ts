@@ -3,6 +3,7 @@ import { AD_MAX_REGIONS, Category } from "./config";
 import type { Deal } from "./collectKroger";
 import { clearOwnDeals, markAreasReady, sharingFields } from "./regions";
 import { withStockUp } from "./stockUp";
+import { enrichHebDeals } from "./hebPrices";
 
 /**
  * H-E-B has no public API. For testing we read the weekly ad as published on Flipp,
@@ -104,6 +105,8 @@ export interface HebRegion {
   validTo: string;
   deals: number;
   removed: number;
+  /** Ad items given a regular price from the H-E-B price book. */
+  regularPricesAdded?: number;
 }
 
 /**
@@ -196,6 +199,8 @@ export async function collectHebDeals(zips: string[], dryRun = false, everydayZi
     stale.forEach((d) => writer.delete(d.ref));
     region.removed = stale.size;
     await writer.close();
+    // Fill in regular prices (and savings) from the H-E-B price book, when there is one.
+    region.regularPricesAdded = (await enrichHebDeals(db, storeId, everydayId)).enriched;
   }
 
   const summary = {
