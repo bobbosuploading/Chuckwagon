@@ -9,11 +9,13 @@ import UIKit
 /// backend's servers). The backend only handles sign-in and hands out short-lived tokens.
 /// Everything else: an Instacart shopping list the shopper opens in Instacart.
 enum SendToCart {
-    enum Route { case kroger(locationId: String), instacart }
+    enum Route { case kroger(locationId: String), walmart, instacart }
 
-    /// Kroger family store ids look like `kroger-{locationId}`; every other store goes through Instacart.
+    /// Kroger family store ids look like `kroger-{locationId}`, Walmart ids `walmart-{storeNo}`.
+    /// Every other store goes through Instacart (Walmart isn't on Instacart).
     static func route(forStoreId storeId: String) -> Route {
         if storeId.hasPrefix("kroger-") { return .kroger(locationId: String(storeId.dropFirst("kroger-".count))) }
+        if storeId.hasPrefix("walmart-") { return .walmart }
         return .instacart
     }
 
@@ -31,6 +33,35 @@ enum SendToCart {
             case .cancelled: "Kroger sign-in was cancelled."
             }
         }
+    }
+
+    // MARK: Walmart
+
+    /// Walmart's add-to-cart link: opens walmart.com (or the Walmart app) with the items in the cart.
+    /// Only sale items carry a Walmart item id (`walmart-{storeNo}_wm-{itemId}`); the rest are
+    /// returned in `notAdded` for the shopper to add by hand.
+    static func walmartCartLink(items: [MealPlan.ListItem]) -> (url: URL?, added: [String], notAdded: [String]) {
+        var parts: [String] = []
+        var added: [String] = []
+        var notAdded: [String] = []
+        for item in items {
+            if let id = walmartItemId(item.dealId) {
+                parts.append("\(id)|\(max(1, item.buyCount))")
+                added.append(item.item)
+            } else {
+                notAdded.append(item.item)
+            }
+        }
+        guard !parts.isEmpty else { return (nil, added, notAdded) }
+        var comps = URLComponents(string: "https://affil.walmart.com/cart/addToCart")!
+        comps.queryItems = [.init(name: "items", value: parts.joined(separator: ","))]
+        return (comps.url, added, notAdded)
+    }
+
+    static func walmartItemId(_ dealId: String?) -> String? {
+        guard let dealId, dealId.hasPrefix("walmart-"), let r = dealId.range(of: "_wm-") else { return nil }
+        let id = String(dealId[r.upperBound...])
+        return !id.isEmpty && id.allSatisfy(\.isNumber) ? id : nil
     }
 
     // MARK: Instacart
