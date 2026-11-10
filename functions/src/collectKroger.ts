@@ -128,6 +128,8 @@ export async function collectKrogerDeals(
       name: store.name,
       locationId: store.locationId,
       address: store.address,
+      zip: store.address.zipCode ?? null,
+      geo: store.geolocation ? { lat: store.geolocation.latitude, lng: store.geolocation.longitude } : null,
       source: "kroger-api",
       updatedAt: now,
     });

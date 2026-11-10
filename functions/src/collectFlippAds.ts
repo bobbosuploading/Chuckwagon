@@ -106,6 +106,7 @@ export async function collectFlippAds(zip: string, chains = AD_CHAINS, dryRun = 
       chain: c.chain,
       name: c.chain,
       address: { addressLine1: "Weekly ad", city: `near ${zip}`, zipCode: zip },
+      zip,
       source: "flipp",
       updatedAt: now,
     }, { merge: true });
