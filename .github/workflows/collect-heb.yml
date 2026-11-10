@@ -1,10 +1,9 @@
 name: Collect H-E-B deals
 
 # H-E-B's weekly ad runs Wednesday to Tuesday. Load it Wednesday and Friday mornings.
-# The schedule stays off until the dry run looks right:
-# schedule:
-#   - cron: "15 12 * * 3,5"
 on:
+  schedule:
+    - cron: "15 12 * * 3,5"
   workflow_dispatch:
     inputs:
       dry_run:
