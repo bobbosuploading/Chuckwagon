@@ -14,6 +14,18 @@ enum Backend {
         }
     }
 
+    /// Whether this account has premium (set only by the backend).
+    static func isPremium() async throws -> Bool {
+        guard let uid = Auth.auth().currentUser?.uid else { return false }
+        let doc = try await db.collection("users").document(uid).getDocument()
+        return doc.get("premium") as? Bool ?? false
+    }
+
+    /// Unlocks premium with a tester code.
+    static func redeemCode(_ code: String) async throws {
+        _ = try await Functions.functions().httpsCallable("redeemTesterCode").call(["code": code])
+    }
+
     static func stores() async throws -> [Store] {
         let snap = try await db.collection("stores").getDocuments()
         return snap.documents.compactMap { try? $0.data(as: Store.self) }

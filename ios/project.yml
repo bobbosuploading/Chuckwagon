@@ -19,6 +19,10 @@ targets:
     platform: iOS
     sources:
       - Chuckwagon
+    entitlements:
+      path: Chuckwagon/Chuckwagon.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon

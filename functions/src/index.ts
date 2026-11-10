@@ -57,6 +57,32 @@ async function reservePlan(db: Firestore, uid: string, premium: boolean): Promis
 }
 
 /**
+ * Unlocks premium for testers. Codes live in codes/{CODE} (create them in the Firebase console):
+ *   premium: true, maxUses: 25, uses: 0, expiresAt: "2027-02-01" (optional)
+ */
+export const redeemTesterCode = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const code = String(request.data?.code ?? "").trim().toUpperCase();
+  if (!/^[A-Z0-9-]{4,32}$/.test(code)) throw new HttpsError("invalid-argument", "That code doesn't look right.");
+  const db = getFirestore();
+  const uid = request.auth.uid;
+  await db.runTransaction(async (tx) => {
+    const ref = db.collection("codes").doc(code);
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.get("premium") !== true) throw new HttpsError("not-found", "That code isn't valid.");
+    const expires = snap.get("expiresAt") as string | undefined;
+    if (expires && Date.parse(expires) < Date.now()) throw new HttpsError("failed-precondition", "That code has expired.");
+    const uses = (snap.get("uses") as number | undefined) ?? 0;
+    const max = (snap.get("maxUses") as number | undefined) ?? 25;
+    if (uses >= max) throw new HttpsError("resource-exhausted", "That code has been used up.");
+    tx.update(ref, { uses: FieldValue.increment(1), usedBy: FieldValue.arrayUnion(uid) });
+    tx.set(db.collection("users").doc(uid), { premium: true, premiumSource: `code:${code}`, premiumSince: new Date().toISOString() }, { merge: true });
+  });
+  logger.info("Tester code redeemed", { uid, code });
+  return { premium: true };
+});
+
+/**
  * "Headed to [store]". Called from the iOS app (and later Bloom Circle) by signed-in users.
  * Saves the plan to plans/{id} and returns it.
  */
