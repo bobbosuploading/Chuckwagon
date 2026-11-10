@@ -137,3 +137,7 @@ Setup (all optional; without them the buttons just say the feature isn't set up)
 | GitHub variable (optional) | `INSTACART_API_URL` | `https://connect.dev.instacart.tools` while using a development key; leave unset for production |
 
 The **Deploy to Firebase** workflow writes these into `functions/.env` before deploying. When deploying from a Mac, create `functions/.env` with the same names.
+
+## What's new list (TestFlight)
+
+`CHANGES.txt` lists what's new in each TestFlight build, newest first, in plain text ready to paste into TestFlight's "What to Test" box. Each time the build number in `ios/project.yml` goes up, add a `Build N` section at the top. The **Build iPhone app** workflow fails if the current build number has no section.
