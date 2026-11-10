@@ -13,9 +13,10 @@ Build 4 (0.1.0)
 What's new since build 3:
 
 - Meal ideas to pick from: every plan now comes with 2 extra meal ideas. On the Meals tab, tap the circles to swap a meal you don't like for one of the extras, or add one. The grocery list and total update right away, and it doesn't use up a plan.
+- Sale prices on receipts: when you scan a receipt, items bought on sale or with a coupon get a red SALE tag with the regular price. Sale prices no longer count as a store's everyday price.
 - Store distance: in Settings, under "Your stores", pick how far to look for stores (10, 20, 30 or 50 miles). It starts at 30.
 
-Please try: making a plan, then swapping one meal on the Meals tab and checking that the grocery list changes to match. Also try switching store distance to 50 miles and checking that farther stores show up.
+Please try: making a plan, then swapping one meal on the Meals tab and checking that the grocery list changes to match. Also try switching store distance to 50 miles and checking that farther stores show up, and scan a receipt with a sale item on it.
 
 ========================================
 Build 3 (0.1.0)
