@@ -124,12 +124,16 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var forMeals: [String]
         /// Which store to buy it at (multi-store plans). Older plans don't have it.
         var storeName: String?
+        /// For items not on sale: "store", "receipt", or "estimate" (another store's price stands in).
+        var priceSource: String?
+        /// For items not on sale: the product that was priced.
+        var pricedAs: String?
         /// Set on the phone only; the backend never sends it.
         var checked = false
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName
+            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs
         }
     }
 
@@ -137,6 +141,10 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var saleItems: Double
         var savings: Double
         var itemsNotPriced: Int
+        /// Items not on sale at everyday prices. Older plans don't have it.
+        var regularItems: Double?
+        /// Sale + regular items (unpriced items not included). Older plans don't have it.
+        var estimatedTotal: Double?
     }
 }
 

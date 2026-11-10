@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var showingHeadedTo = false
     @State private var showingSettings = false
     @State private var showingPlans = false
+    @State private var showingReceipt = false
 
     private var myStores: [Store] {
         let favs = stores.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
@@ -52,6 +53,8 @@ struct HomeView: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
+                    Button { showingReceipt = true } label: { Label("Scan a receipt", systemImage: "doc.text.viewfinder") }
+                        .disabled(currentStore == nil)
                     Button { showingSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }
@@ -72,6 +75,9 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
+            .sheet(isPresented: $showingReceipt) {
+                if let store = currentStore { ReceiptScanView(store: store) }
+            }
             .sheet(isPresented: $showingSettings) {
                 NavigationStack {
                     PreferencesForm(showsStores: true)
