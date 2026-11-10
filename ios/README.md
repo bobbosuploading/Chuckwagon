@@ -5,7 +5,7 @@ SwiftUI app (iOS 17+). The Xcode project is generated from `project.yml` with Xc
 ## First-time setup (on the Mac)
 
 1. `brew install xcodegen`
-2. In `project.yml`, replace `com.example` with your bundle ID prefix (both places).
+2. Bundle ID is `com.bobby.chuckwagon` (set in `project.yml`).
 3. Firebase console > Project settings > Add app > iOS, using the same bundle ID.
    Download `GoogleService-Info.plist` into `ios/Chuckwagon/` (it is gitignored).
 4. Firebase console > Authentication > Sign-in method > turn on **Anonymous**.

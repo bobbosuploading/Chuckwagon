@@ -1,7 +1,7 @@
 # Generate the Xcode project with XcodeGen:  brew install xcodegen && cd ios && xcodegen
 name: Chuckwagon
 options:
-  bundleIdPrefix: com.example # replace with your prefix
+  bundleIdPrefix: com.bobby
   deploymentTarget:
     iOS: "17.0"
 settings:
@@ -21,7 +21,7 @@ targets:
       - Chuckwagon
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.chuckwagon # replace with your prefix
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon
         GENERATE_INFOPLIST_FILE: YES
