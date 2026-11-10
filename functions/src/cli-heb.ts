@@ -15,7 +15,7 @@ async function main() {
   for (const d of deals) {
     const price = d.salePrice !== null ? `$${d.salePrice}${d.soldBy === "WEIGHT" ? "/lb" : ""}` : "promo";
     const promo = d.promo ? `  [${d.promo.slice(0, 90)}]` : "";
-    console.log(`${d.category.padEnd(9)} ${price.padEnd(9)} ${d.name}${promo}`);
+    console.log(`${d.category.padEnd(9)} ${price.padEnd(9)} ${d.name}${promo}  pct=${JSON.stringify(d.pctOff)} reg=${JSON.stringify(d.regularPrice)} save=${JSON.stringify(d.savings)}`);
   }
   if (deals.length === 0) throw new Error("No H-E-B deals found");
 }
