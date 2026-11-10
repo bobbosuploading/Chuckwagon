@@ -7,3 +7,9 @@ functions/lib/
 *.log
 .firebase/
 .DS_Store
+
+# iOS
+GoogleService-Info.plist
+ios/*.xcodeproj/
+xcuserdata/
+DerivedData/
