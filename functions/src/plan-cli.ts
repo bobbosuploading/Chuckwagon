@@ -40,6 +40,13 @@ function toMarkdown(p: MealPlan): string {
   out.push(
     `**Sale items: $${p.totals.saleItems.toFixed(2)} · Regular items: $${p.totals.regularItems.toFixed(2)} · Estimated total: $${p.totals.estimatedTotal.toFixed(2)} · You save: $${p.totals.savings.toFixed(2)}** (${p.totals.itemsNotPriced} items not priced)`
   );
+  if (p.totals.perServing != null) out.push(`About $${p.totals.perServing.toFixed(2)} per serving.`);
+  if (p.budget) {
+    const b = p.budget;
+    out.push(
+      `**Budget $${b.amount.toFixed(2)}: ${b.fits ? `fits, $${b.left.toFixed(2)} left` : `over by $${(-b.left).toFixed(2)}`}**${b.revised ? " (trimmed after the first try came in over)" : ""}`
+    );
+  }
   if (p.notes) out.push(`\n> ${p.notes}`);
   return out.join("\n");
 }
