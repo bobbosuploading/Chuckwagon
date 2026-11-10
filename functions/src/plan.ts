@@ -314,7 +314,9 @@ ${lines}`;
     const norm = (t: string) => t.toLowerCase().replace(/[^a-z ]/g, "").trim();
     const listedDealIds = new Set(listed.map((li) => li.dealId).filter(Boolean));
     const listedNames = new Set(listed.map((li) => norm(li.item)));
-    const atHome = (req.haveAtHome || "salt, pepper, cooking oil, oil, basic spices, spices")
+    // Basic spices are assumed, so "1 tsp chili powder" shouldn't add a $1.25 jar to a tight budget.
+    const BASIC_SPICES = "basic spices, spices, chili powder, garlic powder, onion powder, paprika, cumin, oregano, dried herbs, seasoning";
+    const atHome = `${req.haveAtHome || "salt, pepper, cooking oil, oil"}, ${BASIC_SPICES}`
       .split(",")
       .map(norm)
       .filter(Boolean);
@@ -324,7 +326,10 @@ ${lines}`;
         const deal = ing.dealId ? deals.get(ing.dealId) : undefined;
         const key = deal ? `deal:${ing.dealId}` : `name:${norm(ing.item)}`;
         if (deal && listedDealIds.has(ing.dealId)) continue;
-        if (!deal && (listedNames.has(norm(ing.item)) || atHome.some((h) => norm(ing.item).includes(h)))) continue;
+        // Loose match, so "Onion" counts as listed when "Onions" is, and "Pasta, any shape" when "Pasta" is.
+        const name = norm(ing.item).replace(/s$/, "");
+        const isListed = [...listedNames].some((n) => n.includes(name) || name.includes(n.replace(/s$/, "")));
+        if (!deal && (isListed || atHome.some((h) => name.includes(h)))) continue;
         const existing = missing.get(key);
         if (existing) {
           existing.quantityNote += ` + ${ing.amount}`;
