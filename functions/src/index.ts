@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, Firestore, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
@@ -14,6 +14,46 @@ initializeApp();
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 
+/** Spending guards. Everyday plans cost about half a cent; premium about 17 cents. */
+const LIMITS = {
+  freePerDay: 3, // everyday plans per user per day
+  premiumPerDay: 5, // premium plans per premium user per day
+  allUsersPerDay: 300, // kill switch: total plans per day across everyone
+};
+
+/** Central-time date, so limits reset at midnight in Texas. */
+function today(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
+
+/**
+ * Counts this request against the daily limits, or refuses it.
+ * Premium is allowed only when users/{uid}.premium is true (set by the backend, never the app).
+ */
+async function reservePlan(db: Firestore, uid: string, premium: boolean): Promise<void> {
+  const day = today();
+  const userRef = db.collection("users").doc(uid);
+  const mine = db.collection("usage").doc(`${uid}_${day}`);
+  const everyone = db.collection("usage").doc(`all_${day}`);
+  await db.runTransaction(async (tx) => {
+    const [user, m, e] = await Promise.all([tx.get(userRef), tx.get(mine), tx.get(everyone)]);
+    if (premium && user.get("premium") !== true) {
+      throw new HttpsError("permission-denied", "Chef's pick is a premium feature. It's coming soon!");
+    }
+    const field = premium ? "premium" : "free";
+    const used = (m.get(field) as number | undefined) ?? 0;
+    const limit = premium ? LIMITS.premiumPerDay : LIMITS.freePerDay;
+    if (used >= limit) {
+      throw new HttpsError("resource-exhausted", `You've made ${limit} plans today. Your saved plans are under My plans, and you can make more tomorrow.`);
+    }
+    if (((e.get("total") as number | undefined) ?? 0) >= LIMITS.allUsersPerDay) {
+      throw new HttpsError("resource-exhausted", "Chuckwagon is extra busy today. Please try again tomorrow.");
+    }
+    tx.set(mine, { uid, day, [field]: FieldValue.increment(1) }, { merge: true });
+    tx.set(everyone, { day, total: FieldValue.increment(1) }, { merge: true });
+  });
+}
+
 /**
  * "Headed to [store]". Called from the iOS app (and later Bloom Circle) by signed-in users.
  * Saves the plan to plans/{id} and returns it.
@@ -24,8 +64,9 @@ export const planMealsForStore = onCall(
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to plan meals");
     const data = request.data as PlanRequest;
     if (!data?.storeId) throw new HttpsError("invalid-argument", "storeId is required");
+    const db = getFirestore();
+    await reservePlan(db, request.auth.uid, data.premium === true);
     try {
-      const db = getFirestore();
       const plan = await planMeals(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), data);
       const ref = await db.collection("plans").add({ ...plan, uid: request.auth.uid });
       logger.info("Plan created", { id: ref.id, model: plan.model, usage: plan.usage });
