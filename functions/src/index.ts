@@ -3,6 +3,7 @@ import { FieldValue, Firestore, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
 import { planMeals, PlanRequest } from "./plan";
 import { scanReceipt } from "./receipts";
@@ -77,6 +78,7 @@ const MAX_AREAS = 15;
  * collection still has to run, or "waitlist" if the beta is full.
  */
 export const registerArea = onCall(async (request) => {
+  requireApp(request, "registerArea");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const zip = String(request.data?.zip ?? "").trim();
   if (!/^\d{5}$/.test(zip)) throw new HttpsError("invalid-argument", "Please send a 5-digit ZIP code");
@@ -109,6 +111,7 @@ export const registerArea = onCall(async (request) => {
  *   premium: true, maxUses: 25, uses: 0, expiresAt: "2027-02-01" (optional)
  */
 export const redeemTesterCode = onCall(async (request) => {
+  requireApp(request, "redeemTesterCode");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const code = String(request.data?.code ?? "").trim().toUpperCase();
   if (!/^[A-Z0-9-]{4,32}$/.test(code)) throw new HttpsError("invalid-argument", "That code doesn't look right.");
@@ -137,6 +140,7 @@ export const redeemTesterCode = onCall(async (request) => {
 export const planMealsForStore = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: "512MiB" },
   async (request) => {
+    requireApp(request, "planMealsForStore");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to plan meals");
     const data = request.data as PlanRequest;
     if (!data?.storeId) throw new HttpsError("invalid-argument", "storeId is required");
@@ -164,6 +168,7 @@ const RECEIPT_LIMITS = { perUserPerDay: 10, allUsersPerDay: 500 };
 export const scanReceiptPhoto = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
   async (request) => {
+    requireApp(request, "scanReceiptPhoto");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan receipts");
     const { storeId, imageBase64, mediaType } = (request.data ?? {}) as {
       storeId?: string;

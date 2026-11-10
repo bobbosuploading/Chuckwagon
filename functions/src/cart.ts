@@ -19,6 +19,7 @@ import { randomBytes } from "node:crypto";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { requireApp } from "./appCheck";
 
 const KROGER_API = "https://api.kroger.com/v1";
 /** Add to the shopper's cart, and search products at their store. */
@@ -67,6 +68,7 @@ async function krogerToken(body: Record<string, string>): Promise<TokenResponse>
 
 /** Step 1: the app asks where to send the shopper to sign in with Kroger. */
 export const krogerConnectUrl = onCall(async (request) => {
+  requireApp(request, "krogerConnectUrl");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const { id } = krogerCreds();
   const state = randomBytes(24).toString("hex");
@@ -119,6 +121,7 @@ export const krogerCallback = onRequest(async (req, res) => {
 
 /** Step 3: the app asks for a fresh access token each time it sends a list to the cart. */
 export const krogerAccessToken = onCall(async (request) => {
+  requireApp(request, "krogerAccessToken");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const db = getFirestore();
   const ref = db.collection("krogerTokens").doc(request.auth.uid);
@@ -145,6 +148,7 @@ export const krogerAccessToken = onCall(async (request) => {
 });
 
 export const krogerDisconnect = onCall(async (request) => {
+  requireApp(request, "krogerDisconnect");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const db = getFirestore();
   await db.collection("krogerTokens").doc(request.auth.uid).delete();
@@ -170,6 +174,7 @@ export function searchTerm(item: string): string {
  * Skips items the shopper already checked off. Returns the link to open.
  */
 export const instacartShoppingList = onCall(async (request) => {
+  requireApp(request, "instacartShoppingList");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const apiKey = process.env.INSTACART_API_KEY ?? "";
   if (!apiKey) throw new HttpsError("failed-precondition", "Instacart isn't set up yet.");
