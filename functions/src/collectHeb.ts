@@ -2,6 +2,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { Category } from "./config";
 import type { Deal } from "./collectKroger";
 import { withStockUp } from "./stockUp";
+import { enrichHebDeals } from "./hebPrices";
 
 /**
  * H-E-B has no public API. For testing we read the weekly ad as published on Flipp,
@@ -121,6 +122,8 @@ export async function collectHebDeals(zip: string, dryRun = false) {
   stale.forEach((d) => writer.delete(d.ref));
   summary.removed = stale.size;
   await writer.close();
-  await db.collection("runs").add({ type: "heb", zip, at: now, ...summary });
+  // Fill in regular prices (and savings) from the H-E-B price book, when there is one.
+  const priced = await enrichHebDeals(db, zip);
+  await db.collection("runs").add({ type: "heb", zip, at: now, ...summary, regularPricesAdded: priced.enriched });
   return { summary, deals };
 }

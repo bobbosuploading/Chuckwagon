@@ -10,7 +10,9 @@
  * Results are merged into priceBooks/heb-{zip}; items not seen this run are kept for
  * up to KEEP_DAYS, so different staples can be covered in different months.
  */
-import { getFirestore } from "firebase-admin/firestore";
+import { Firestore, getFirestore } from "firebase-admin/firestore";
+import type { Deal } from "./collectKroger";
+import { withStockUp } from "./stockUp";
 import type { Category } from "./config";
 import { fitToDoc, PriceBookItem, words } from "./priceBook";
 
@@ -126,7 +128,7 @@ export async function collectHebPrices(token: string, zip: string, opts: { dryRu
     });
   }
   const storeName = rows.find((r) => r.storeName)?.storeName ?? null;
-  const summary = { zip, rows: rows.length, prices: items.length, store: storeName, saved: false };
+  const summary = { zip, rows: rows.length, prices: items.length, store: storeName, saved: false, adDealsPriced: 0 };
   if (opts.dryRun || items.length === 0) return { summary, items };
 
   // Merge with earlier runs: newest price per product name wins; drop prices older than KEEP_DAYS.
@@ -152,6 +154,57 @@ export async function collectHebPrices(token: string, zip: string, opts: { dryRu
     });
   });
   summary.saved = true;
+  const ad = await enrichHebDeals(db, zip);
+  summary.adDealsPriced = ad.enriched;
   await db.collection("runs").add({ type: "heb-prices", at: new Date(), ...summary });
   return { summary, items };
+}
+
+/** Ad deal names that are too vague to match one product ("Assorted varieties"). */
+const MAX_EXTRA_WORDS = 4;
+const MAX_PCT = 70;
+
+/**
+ * The H-E-B weekly ad gives a sale price but rarely the regular price, so most ad items
+ * show no savings. Fill regularPrice, savings and pctOff from priceBooks/heb-{zip} when a
+ * product clearly matches: every word of the ad name is in the product name, the product
+ * name has few extra words, and both are sold the same way (each or per lb). When several
+ * products match, the lowest regular price above the sale price is used, so savings are
+ * never overstated. Deals that already have a regular price are left alone.
+ */
+export async function enrichHebDeals(db: Firestore, zip: string): Promise<{ checked: number; enriched: number }> {
+  const storeId = `heb-${zip}`;
+  const book = ((await db.doc(`priceBooks/${storeId}`).get()).get("items") as PriceBookItem[] | undefined) ?? [];
+  const deals = await db.collection("deals").where("storeId", "==", storeId).get();
+  if (book.length === 0) return { checked: deals.size, enriched: 0 };
+  const bookWords = book.map((p) => ({ p, w: new Set(words(p.name)) }));
+  const writer = db.bulkWriter();
+  let enriched = 0;
+  for (const doc of deals.docs) {
+    const d = doc.data();
+    const sale = d.salePrice as number | null;
+    if (d.regularPrice != null || !(sale && sale > 0)) continue;
+    const want = words(d.name as string);
+    if (want.length === 0) continue;
+    let best: number | null = null;
+    for (const { p, w } of bookWords) {
+      if (p.soldBy !== d.soldBy || p.price <= sale) continue;
+      if (!want.every((x) => w.has(x)) || w.size - want.length > MAX_EXTRA_WORDS) continue;
+      if (best === null || p.price < best) best = p.price;
+    }
+    if (best === null) continue;
+    const regularPrice = Math.round(best * 100) / 100;
+    const pctOff = Math.round(((regularPrice - sale) / regularPrice) * 100);
+    if (pctOff < 1 || pctOff > MAX_PCT) continue;
+    const update = {
+      regularPrice,
+      savings: Math.round((regularPrice - sale) * 100) / 100,
+      pctOff,
+      regularPriceSource: "heb-apify",
+    };
+    writer.update(doc.ref, { ...update, stockUp: withStockUp({ ...(d as Deal), ...update }).stockUp });
+    enriched++;
+  }
+  await writer.close();
+  return { checked: deals.size, enriched };
 }
