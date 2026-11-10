@@ -88,6 +88,8 @@ Rules:
 - Build each meal mainly from the SALE ITEMS. Use non-sale items only where a meal truly needs them, and keep those cheap and common.
 - Only cite sale items that are listed, by their exact id. Never invent a deal or a price.
 - Allergies are absolute: never include an allergen, even as a minor ingredient. Respect diet and dislikes too.
+- A diet applies to the whole dish, including sauces, marinades and glazes (for example, sugary BBQ or teriyaki sauces are not low carb).
+- Make each meal a real recipe with varied flavors; don't repeat the same main vegetable or sauce in most meals.
 - Leave anything under HAVE AT HOME off the grocery list, though meals may use it.
 - Prefer meals that share ingredients so the list stays short and little goes to waste.
 - Size quantities for the household and the number of meals. buyCount is whole packages or units as sold.
