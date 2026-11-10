@@ -26,6 +26,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
     scheme: {}
     dependencies:
       - package: Firebase
