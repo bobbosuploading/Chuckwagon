@@ -1,0 +1,34 @@
+name: Deploy to Firebase
+
+# Deploys the backend without needing a Mac. Start it by hand from the
+# Actions tab (works from the GitHub phone app too). It never runs on its own.
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: "What to deploy"
+        type: choice
+        options: ["firestore,functions", "firestore", "functions"]
+        default: "firestore,functions"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+        working-directory: functions
+      - name: Write Firebase credentials
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Deploy
+        run: npx --yes firebase-tools@14 deploy --project chuckwagon-ebbcc --only "${{ inputs.what }}" --non-interactive --force
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
