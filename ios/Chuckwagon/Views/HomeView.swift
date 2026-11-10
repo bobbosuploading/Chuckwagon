@@ -97,7 +97,7 @@ struct HomeView: View {
                     self.error = error.localizedDescription
                 }
             }
-            .task(id: "\(storeId ?? "")|\(category?.rawValue ?? "all")") { await load() }
+            .task(id: "\(currentStore?.dealsStoreId ?? "")|\(category?.rawValue ?? "all")") { await load() }
         }
     }
 
@@ -118,6 +118,11 @@ struct HomeView: View {
                 if let line = currentStore?.cityLine, !line.isEmpty {
                     Label(line, systemImage: "mappin.and.ellipse")
                         .font(Theme.body(.subheadline))
+                        .foregroundStyle(Theme.ink.opacity(0.6))
+                }
+                if let note = currentStore?.pricesNote {
+                    Label(note, systemImage: "arrow.triangle.branch")
+                        .font(Theme.body(.footnote))
                         .foregroundStyle(Theme.ink.opacity(0.6))
                 }
             }
@@ -215,7 +220,8 @@ struct HomeView: View {
     }
 
     private func load() async {
-        guard let storeId else { return }
+        // Stores in a price region show the deals of the store they share with.
+        guard let storeId = currentStore?.dealsStoreId else { return }
         loading = true
         error = nil
         defer { loading = false }

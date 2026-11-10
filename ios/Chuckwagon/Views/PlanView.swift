@@ -29,15 +29,24 @@ struct PlanView: View {
     @ViewBuilder private var storeSummary: some View {
         if let stores = plan.stores, stores.count > 1 {
             ForEach(stores, id: \.storeId) { s in
-                HStack {
-                    Image(systemName: "storefront.fill").foregroundStyle(Theme.red)
-                    Text(s.storeName).font(Theme.body(.subheadline, weight: .semibold))
-                    Spacer()
-                    Text("\(s.items) items · save \(s.savings.dollars)")
-                        .font(Theme.body(.caption))
-                        .foregroundStyle(Theme.ink.opacity(0.6))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Image(systemName: "storefront.fill").foregroundStyle(Theme.red)
+                        Text(s.storeName).font(Theme.body(.subheadline, weight: .semibold))
+                        Spacer()
+                        Text("\(s.items) items · save \(s.savings.dollars)")
+                            .font(Theme.body(.caption))
+                            .foregroundStyle(Theme.ink.opacity(0.6))
+                    }
+                    if let note = s.pricesNote {
+                        Text(note).font(Theme.body(.caption2)).foregroundStyle(Theme.ink.opacity(0.55))
+                    }
                 }
             }
+        } else if let note = plan.stores?.first?.pricesNote {
+            Label(note, systemImage: "arrow.triangle.branch")
+                .font(Theme.body(.caption))
+                .foregroundStyle(Theme.ink.opacity(0.6))
         }
     }
 
@@ -185,7 +194,7 @@ struct ListItemRow: View {
                     // Not on sale: everyday price from the store's price book or a receipt.
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(total.dollars).font(.subheadline).foregroundStyle(Theme.ink.opacity(0.75))
-                        Text(item.priceSource == "estimate" ? "est. price" : "regular")
+                        Text(item.priceSource == "estimate" ? "est. price" : item.priceSource == "nearby" ? "nearby price" : "regular")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
