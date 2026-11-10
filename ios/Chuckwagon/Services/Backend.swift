@@ -21,6 +21,13 @@ enum Backend {
         return doc.get("premium") as? Bool ?? false
     }
 
+    /// Whether this account has signed in with Kroger for send-to-cart (set only by the backend).
+    static func isKrogerConnected() async throws -> Bool {
+        guard let uid = Auth.auth().currentUser?.uid else { return false }
+        let doc = try await db.collection("users").document(uid).getDocument()
+        return doc.get("krogerConnected") as? Bool ?? false
+    }
+
     /// Unlocks premium with a tester code.
     static func redeemCode(_ code: String) async throws {
         _ = try await Functions.functions().httpsCallable("redeemTesterCode").call(["code": code])

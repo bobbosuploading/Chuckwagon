@@ -28,6 +28,21 @@ jobs:
         run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Write function settings
+        # Optional: send-to-cart settings. Empty values just turn that feature off.
+        working-directory: functions
+        run: |
+          {
+            echo "KROGER_CLIENT_ID=$KROGER_CLIENT_ID"
+            echo "KROGER_CLIENT_SECRET=$KROGER_CLIENT_SECRET"
+            echo "INSTACART_API_KEY=$INSTACART_API_KEY"
+            echo "INSTACART_API_URL=$INSTACART_API_URL"
+          } > .env
+        env:
+          KROGER_CLIENT_ID: ${{ secrets.KROGER_CLIENT_ID }}
+          KROGER_CLIENT_SECRET: ${{ secrets.KROGER_CLIENT_SECRET }}
+          INSTACART_API_KEY: ${{ secrets.INSTACART_API_KEY }}
+          INSTACART_API_URL: ${{ vars.INSTACART_API_URL }}
       - name: Deploy
         run: npx --yes firebase-tools@14 deploy --project chuckwagon-ebbcc --only "${{ inputs.what }}" --non-interactive --force
         env:

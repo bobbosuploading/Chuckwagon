@@ -124,12 +124,13 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var forMeals: [String]
         /// Which store to buy it at (multi-store plans). Older plans don't have it.
         var storeName: String?
+        var storeId: String?
         /// Set on the phone only; the backend never sends it.
         var checked = false
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName
+            case regularPrice, lineTotal, lineSavings, forMeals, storeName, storeId
         }
     }
 

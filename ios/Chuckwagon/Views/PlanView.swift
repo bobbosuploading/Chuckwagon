@@ -54,6 +54,7 @@ struct PlanView: View {
             switch tab {
             case .list:
                 storeSummary
+                SendToCartSection(plan: plan)
                 ForEach(aisles, id: \.0) { aisle, indices in
                     Section(aisle) {
                         ForEach(indices, id: \.self) { i in
