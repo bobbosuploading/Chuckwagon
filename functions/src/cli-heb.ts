@@ -18,18 +18,6 @@ async function main() {
     console.log(`${d.category.padEnd(9)} ${price.padEnd(9)} ${d.name}${promo}  pct=${JSON.stringify(d.pctOff)} reg=${JSON.stringify(d.regularPrice)} save=${JSON.stringify(d.savings)}`);
   }
   if (deals.length === 0) throw new Error("No H-E-B deals found");
-  if (dryRun && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    // Diagnostic: what is stored for this store right now.
-    const { getFirestore } = await import("firebase-admin/firestore");
-    initializeApp();
-    const snap = await getFirestore().collection("deals").where("storeId", "==", `heb-${zip}`).get();
-    console.log(`stored: ${snap.size}`);
-    for (const doc of snap.docs) {
-      const x = doc.data();
-      const types = Object.entries(x).map(([k, v]) => `${k}:${v === null ? "null" : typeof v}`).join(",");
-      console.log(`${doc.id} pct=${JSON.stringify(x.pctOff)} ${types}`);
-    }
-  }
 }
 
 main().catch((err) => {
