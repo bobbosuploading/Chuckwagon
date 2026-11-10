@@ -31,7 +31,7 @@ export interface Deal {
   promo?: string | null;
   /** When the sale ends (ISO date), if known. */
   validTo?: string;
-  source: "kroger-api" | "flipp";
+  source: "kroger-api" | "flipp" | "walmart-api";
   fetchedAt: Timestamp;
 }
 
