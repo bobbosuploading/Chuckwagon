@@ -4,6 +4,9 @@ import SwiftUI
 struct PlanView: View {
     @State var plan: MealPlan
     @State private var tab = Tab.list
+    /// True while the backend rebuilds the list for a new set of meals.
+    @State private var choosing = false
+    @State private var chooseError: String?
 
     enum Tab: String, CaseIterable { case list = "Grocery list", meals = "Meals" }
 
@@ -67,6 +70,14 @@ struct PlanView: View {
             switch tab {
             case .list:
                 storeSummary
+                if let options = plan.options, options.meals.count > plan.meals.count {
+                    Button {
+                        tab = .meals
+                    } label: {
+                        Label(extraIdeasText(options), systemImage: "arrow.triangle.swap")
+                            .font(Theme.body(.subheadline, weight: .semibold))
+                    }
+                }
                 SendToCartSection(plan: plan)
                 ForEach(aisles, id: \.0) { aisle, indices in
                     Section(aisle) {
@@ -76,14 +87,27 @@ struct PlanView: View {
                     }
                 }
             case .meals:
-                ForEach(plan.meals) { meal in
-                    NavigationLink {
-                        MealDetailView(meal: meal)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
-                            Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter { $0.dealId != nil }.count) sale items")
-                                .font(.caption).foregroundStyle(.secondary)
+                if let options = plan.options {
+                    Section {
+                        ForEach(options.meals) { meal in
+                            MealPickRow(meal: meal, picked: options.chosen.contains(meal.name), busy: choosing) {
+                                toggle(meal.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Pick your meals")
+                            if choosing { Spacer(); ProgressView() }
+                        }
+                    } footer: {
+                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match.")
+                    }
+                } else {
+                    ForEach(plan.meals) { meal in
+                        NavigationLink {
+                            MealDetailView(meal: meal)
+                        } label: {
+                            MealSummary(meal: meal)
                         }
                     }
                 }
@@ -96,6 +120,42 @@ struct PlanView: View {
         .creamBackground()
         .onChange(of: plan.groceryList.filter(\.checked).map(\.id)) { _, ids in
             Task { try? await Backend.saveChecked(planId: plan.id, itemIds: ids) }
+        }
+        .alert("Couldn't change meals", isPresented: Binding(get: { chooseError != nil }, set: { if !$0 { chooseError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(chooseError ?? "")
+        }
+    }
+
+    private func extraIdeasText(_ options: MealPlan.Options) -> String {
+        let spare = options.meals.count - plan.meals.count
+        return "Not feeling a meal? \(spare) more idea\(spare == 1 ? "" : "s") on the Meals tab"
+    }
+
+    /// Adds or drops a meal, then shows the list the backend rebuilt for the new picks.
+    private func toggle(_ name: String) {
+        guard let options = plan.options, !choosing else { return }
+        var chosen = options.chosen
+        if let i = chosen.firstIndex(of: name) {
+            guard chosen.count > 1 else {
+                chooseError = "Keep at least one meal. Pick another one first, then drop this one."
+                return
+            }
+            chosen.remove(at: i)
+        } else {
+            chosen.append(name)
+        }
+        // Keep the planner's order so the meals don't jump around.
+        chosen = options.meals.map(\.name).filter { chosen.contains($0) }
+        choosing = true
+        Task {
+            do {
+                plan = try await Backend.chooseMeals(planId: plan.id, meals: chosen)
+            } catch {
+                chooseError = error.localizedDescription
+            }
+            choosing = false
         }
     }
 
@@ -201,6 +261,46 @@ struct ListItemRow: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// "Chicken tacos · 30 min · serves 3 · 4 sale items".
+struct MealSummary: View {
+    let meal: MealPlan.Meal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
+            Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter { $0.dealId != nil }.count) sale items")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A meal idea with a circle to pick or drop it. The rest of the row opens the recipe.
+struct MealPickRow: View {
+    let meal: MealPlan.Meal
+    let picked: Bool
+    let busy: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(picked ? Theme.sage : Theme.ink.opacity(0.35))
+            }
+            .buttonStyle(.borderless)
+            .disabled(busy)
+            .accessibilityLabel(picked ? "Drop \(meal.name)" : "Pick \(meal.name)")
+            NavigationLink {
+                MealDetailView(meal: meal)
+            } label: {
+                MealSummary(meal: meal)
+                    .opacity(picked ? 1 : 0.6)
+            }
+        }
     }
 }
 

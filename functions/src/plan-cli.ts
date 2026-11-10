@@ -2,14 +2,15 @@
  * Test the meal planner without the app. Used by the "Test meal plan" GitHub workflow.
  *
  * Env: ANTHROPIC_API_KEY, GOOGLE_APPLICATION_CREDENTIALS (Firebase service account),
- *      optional STORE_ID (defaults to the first store), MODEL, MEALS, HOUSEHOLD, DIET, DISLIKES, BUDGET.
+ *      optional STORE_ID (defaults to the first store), MODEL, MEALS, HOUSEHOLD, DIET, DISLIKES, BUDGET,
+ *      EXTRA (extra meal ideas; the summary then also shows a swap of the last main meal).
  * Saves the plan to plans/{id} and prints a readable summary (also to the GitHub job summary).
  */
 import { appendFileSync } from "node:fs";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
-import { MealPlan, planMeals } from "./plan";
+import { chooseMeals, MealPlan, planMeals } from "./plan";
 
 function toMarkdown(p: MealPlan): string {
   const out: string[] = [];
@@ -71,11 +72,21 @@ async function main() {
       diet: process.env.DIET,
       dislikes: process.env.DISLIKES,
       budget: num(process.env.BUDGET),
+      extraMeals: num(process.env.EXTRA),
     },
     process.env.MODEL || undefined
   );
   const ref = await db.collection("plans").add({ ...plan, uid: "test" });
-  const md = toMarkdown(plan) + `\n\n_Saved as plans/${ref.id}_\n`;
+  let md = toMarkdown(plan) + `\n\n_Saved as plans/${ref.id}_\n`;
+  const opts = plan.options;
+  if (opts) {
+    const extras = opts.meals.filter((m) => !opts.chosen.includes(m.name));
+    md += `\n## Extra meal ideas\n${extras.map((m) => `- ${m.name} (${m.servings} servings, ${m.timeMinutes} min)`).join("\n")}\n`;
+    // Show what a swap does: drop the last main meal, pick the first extra.
+    const swapped = [...opts.chosen.slice(0, -1), extras[0].name];
+    const after = { ...plan, ...chooseMeals(plan, swapped) };
+    md += `\n---\n\n# After swapping "${opts.chosen[opts.chosen.length - 1]}" for "${extras[0].name}"\n\n${toMarkdown(after)}\n`;
+  }
   console.log(md);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 }

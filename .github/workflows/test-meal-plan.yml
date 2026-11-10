@@ -23,6 +23,9 @@ on:
       budget:
         description: "Budget in dollars (blank for none)"
         default: ""
+      extra:
+        description: "Extra meal ideas to pick from (0 to 3)"
+        default: "2"
       store:
         description: "Store id (blank for the first store)"
         default: ""
@@ -58,4 +61,5 @@ jobs:
           DIET: ${{ inputs.diet }}
           DISLIKES: ${{ inputs.dislikes }}
           BUDGET: ${{ inputs.budget }}
+          EXTRA: ${{ inputs.extra }}
           STORE_ID: ${{ inputs.store }}
