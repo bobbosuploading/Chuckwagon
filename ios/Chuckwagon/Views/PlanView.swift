@@ -45,6 +45,10 @@ struct PlanView: View {
         List {
             Section {
                 savingsHeader
+                if let budget = plan.budget {
+                    BudgetMeter(budget: budget, total: plan.totals.estimatedTotal ?? plan.totals.saleItems,
+                                perServing: plan.totals.perServing, unpriced: plan.totals.itemsNotPriced)
+                }
                 Picker("View", selection: $tab) {
                     ForEach(Tab.allCases, id: \.self) { Text($0.rawValue) }
                 }
@@ -96,6 +100,9 @@ struct PlanView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(plan.meals.count) meals").font(Theme.body(.subheadline, weight: .bold)).foregroundStyle(.white)
+                if let total = plan.totals.estimatedTotal, total > plan.totals.saleItems {
+                    Text("About \(total.dollars) total").font(Theme.body(.caption, weight: .bold)).foregroundStyle(.white)
+                }
                 Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
             }
         }
@@ -103,6 +110,48 @@ struct PlanView: View {
         .background(Theme.red, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
+    }
+}
+
+/// "Budget $60 · about $54 · $6 left", with a bar that turns red when the list runs over.
+struct BudgetMeter: View {
+    let budget: MealPlan.Budget
+    let total: Double
+    var perServing: Double?
+    var unpriced = 0
+
+    private var fraction: Double { budget.amount > 0 ? min(total / budget.amount, 1) : 0 }
+    private var tint: Color { budget.fits ? Theme.sage : Theme.red }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Budget \(budget.amount.wholeDollars)", systemImage: "dollarsign.circle.fill")
+                    .font(Theme.body(.subheadline, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Text(budget.fits ? "\(budget.left.dollars) left" : "\((-budget.left).dollars) over")
+                    .font(Theme.body(.subheadline, weight: .heavy))
+                    .foregroundStyle(tint)
+            }
+            ProgressView(value: fraction)
+                .tint(tint)
+            HStack {
+                Text("About \(total.dollars) for this list")
+                if let perServing {
+                    Text("·")
+                    Text("\(perServing.dollars) a serving")
+                }
+            }
+            .font(Theme.body(.caption))
+            .foregroundStyle(Theme.ink.opacity(0.6))
+            if unpriced > 0 {
+                Text("\(unpriced) item\(unpriced == 1 ? " has" : "s have") no price yet, so leave a little room.")
+                    .font(Theme.body(.caption2))
+                    .foregroundStyle(Theme.ink.opacity(0.5))
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -120,6 +169,9 @@ struct ListItemRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.item).strikethrough(item.checked).foregroundStyle(item.checked ? .secondary : .primary)
                     Text(item.quantityNote).font(.caption).foregroundStyle(.secondary)
+                    if let tip = item.stockUp, !item.checked {
+                        StockUpNote(tip: tip)
+                    }
                 }
                 Spacer()
                 if item.onSale, let sale = item.salePrice {
@@ -128,6 +180,13 @@ struct ListItemRow: View {
                         if let save = item.lineSavings, save > 0 {
                             Text("save \(save.dollars)").font(.caption2.bold()).foregroundStyle(Color.chuckRed)
                         }
+                    }
+                } else if let total = item.lineTotal {
+                    // Not on sale: everyday price from the store's price book or a receipt.
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(total.dollars).font(.subheadline).foregroundStyle(Theme.ink.opacity(0.75))
+                        Text(item.priceSource == "estimate" ? "est. price" : "regular")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }

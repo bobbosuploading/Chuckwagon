@@ -2,6 +2,7 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
+import UIKit
 
 /// Everything the app reads from or asks of Firebase.
 enum Backend {
@@ -12,6 +13,14 @@ enum Backend {
         if Auth.auth().currentUser == nil {
             _ = try await Auth.auth().signInAnonymously()
         }
+    }
+
+    /// Adds the shopper's ZIP to the list of areas we collect deals for.
+    /// Returns "ready", "pending" (first collection on its way) or "waitlist" (beta is full).
+    @discardableResult
+    static func registerArea(zip: String) async throws -> String {
+        let result = try await Functions.functions().httpsCallable("registerArea").call(["zip": zip])
+        return (result.data as? [String: Any])?["status"] as? String ?? "pending"
     }
 
     /// Whether this account has premium (set only by the backend).
@@ -62,6 +71,9 @@ enum Backend {
             "maxCookMinutes": prefs.maxCookMinutes,
             "premium": premium,
         ]
+        if prefs.weeklyBudget > 0 {
+            payload["budget"] = prefs.weeklyBudget
+        }
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
         }
@@ -95,8 +107,44 @@ enum Backend {
         try await db.collection("plans").document(id).delete()
     }
 
+    /// What a receipt scan learned. Prices are per item, or per lb when soldBy is "WEIGHT".
+    struct ReceiptScan: Decodable {
+        struct Item: Decodable, Hashable {
+            var name: String
+            var size: String?
+            var price: Double
+            var soldBy: String
+        }
+        var storeName: String?
+        var items: [Item]
+    }
+
+    /// Sends a receipt photo to the backend, which saves the store's everyday prices.
+    static func scanReceipt(storeId: String, image: UIImage) async throws -> ReceiptScan {
+        guard let jpeg = image.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) else {
+            throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
+        }
+        let result = try await Functions.functions().httpsCallable("scanReceiptPhoto")
+            .call(["storeId": storeId, "imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"])
+        let data = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(ReceiptScan.self, from: data)
+    }
+
     private static func decodePlan(_ object: Any) throws -> MealPlan {
         let data = try JSONSerialization.data(withJSONObject: object)
         return try JSONDecoder().decode(MealPlan.self, from: data)
+    }
+}
+
+extension UIImage {
+    /// A copy no larger than `maxSide` points on its longest side (receipts stay readable at 2000).
+    func scaledForUpload(maxSide: CGFloat) -> UIImage {
+        let longest = max(size.width, size.height)
+        guard longest > maxSide else { return self }
+        let scale = maxSide / longest
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in draw(in: CGRect(origin: .zero, size: target)) }
     }
 }

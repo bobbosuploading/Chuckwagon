@@ -58,6 +58,27 @@ Secrets: `firebase functions:secrets:set ANTHROPIC_API_KEY` (for the function) a
 
 Try it without the app: GitHub > Actions > **Test meal plan** > Run workflow, pick a model and preferences. The plan shows on the run's summary page and is saved in Firestore `plans/`.
 
+## Walmart
+
+Walmart has no weekly ad, so `.github/workflows/collect-walmart.yml` (Mon/Wed/Fri) prices the
+best-selling items for each search term in `functions/src/config.ts` (about 200 to 300 items)
+for the home ZIP through the Walmart Affiliate API. Each item's price history is kept in
+`walmartPrices/{zip}_{itemId}`. An item is saved to `deals` when Walmart marks it Rollback, Clearance
+or Special Buy, shows a crossed-out price, or costs at least 8% less than its usual price over
+the last 60 days (needs 3 earlier runs, so price drops start showing about a week in).
+Prices are walmart.com prices for the ZIP; they usually match the shelf.
+
+The workflow skips itself until these repository secrets exist:
+
+| Secret | Value |
+|---|---|
+| `WALMART_CONSUMER_ID` | Consumer ID from walmart.io after uploading your public key |
+| `WALMART_PRIVATE_KEY` | Full text of the matching private key (`WM_IO_private_key.pem`) |
+| `WALMART_KEY_VERSION` | Key version shown on walmart.io (usually `1`) |
+| `WALMART_PUBLISHER_ID` | Optional: your Impact publisher ID, for affiliate links |
+
+Try it first with **Actions > Collect Walmart prices > Run workflow** (dry run is on by default).
+
 ## Send to cart
 
 On a meal plan's grocery list, **Send to cart** has one button per store (items already checked off are left out):

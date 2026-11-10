@@ -5,6 +5,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import Anthropic from "@anthropic-ai/sdk";
 import { planMeals, PlanRequest } from "./plan";
+import { scanReceipt } from "./receipts";
 
 initializeApp();
 
@@ -56,6 +57,42 @@ async function reservePlan(db: Firestore, uid: string, premium: boolean): Promis
   });
 }
 
+/** During testing, deals are collected for at most this many areas (ZIP codes). */
+const MAX_AREAS = 15;
+
+/**
+ * Adds a shopper's ZIP to areas/{zip}, the list of places the collectors cover.
+ * Returns "ready" if deals are already collected there, "pending" if the first
+ * collection still has to run, or "waitlist" if the beta is full.
+ */
+export const registerArea = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const zip = String(request.data?.zip ?? "").trim();
+  if (!/^\d{5}$/.test(zip)) throw new HttpsError("invalid-argument", "Please send a 5-digit ZIP code");
+  const db = getFirestore();
+  const uid = request.auth.uid;
+  const status = await db.runTransaction(async (tx) => {
+    const ref = db.collection("areas").doc(zip);
+    const area = await tx.get(ref);
+    const now = new Date().toISOString();
+    if (area.exists) {
+      tx.update(ref, { users: FieldValue.arrayUnion(uid), lastRequestedAt: now });
+      return area.get("status") as string;
+    }
+    // Areas we already collect for (like the original El Campo ZIP) count as ready.
+    const [byZip, byAddress] = await Promise.all([
+      tx.get(db.collection("stores").where("zip", "==", zip).limit(1)),
+      tx.get(db.collection("stores").where("address.zipCode", "==", zip).limit(1)),
+    ]);
+    const active = await tx.get(db.collection("areas").where("status", "in", ["ready", "pending"]).count());
+    const status = !byZip.empty || !byAddress.empty ? "ready" : active.data().count >= MAX_AREAS ? "waitlist" : "pending";
+    tx.set(ref, { zip, status, users: [uid], createdAt: now, lastRequestedAt: now });
+    return status;
+  });
+  logger.info("Area registered", { zip, status });
+  return { status };
+});
+
 /**
  * Unlocks premium for testers. Codes live in codes/{CODE} (create them in the Firebase console):
  *   premium: true, maxUses: 25, uses: 0, expiresAt: "2027-02-01" (optional)
@@ -101,6 +138,55 @@ export const planMealsForStore = onCall(
       return { id: ref.id, ...plan };
     } catch (err) {
       logger.error("Plan failed", err);
+      throw new HttpsError("internal", (err as Error).message);
+    }
+  }
+);
+
+/** Receipt scans cost about a third of a cent each (Haiku reading one photo). */
+const RECEIPT_LIMITS = { perUserPerDay: 10, allUsersPerDay: 500 };
+
+/**
+ * "Scan a receipt": reads a receipt photo and saves its everyday prices for that store,
+ * so meal plans can price items that aren't on sale. Data: { storeId, imageBase64, mediaType }.
+ */
+export const scanReceiptPhoto = onCall(
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan receipts");
+    const { storeId, imageBase64, mediaType } = (request.data ?? {}) as {
+      storeId?: string;
+      imageBase64?: string;
+      mediaType?: string;
+    };
+    if (!storeId || !imageBase64) throw new HttpsError("invalid-argument", "storeId and imageBase64 are required");
+    if (imageBase64.length > 7_000_000) throw new HttpsError("invalid-argument", "That photo is too large.");
+    const type = (["image/jpeg", "image/png", "image/webp"].includes(mediaType ?? "") ? mediaType : "image/jpeg") as
+      "image/jpeg" | "image/png" | "image/webp";
+
+    const db = getFirestore();
+    const uid = request.auth.uid;
+    const day = today();
+    const mine = db.collection("usage").doc(`${uid}_${day}`);
+    const everyone = db.collection("usage").doc(`all_${day}`);
+    await db.runTransaction(async (tx) => {
+      const [m, e] = await Promise.all([tx.get(mine), tx.get(everyone)]);
+      if (((m.get("receipts") as number | undefined) ?? 0) >= RECEIPT_LIMITS.perUserPerDay) {
+        throw new HttpsError("resource-exhausted", `You've scanned ${RECEIPT_LIMITS.perUserPerDay} receipts today. Thanks! Try again tomorrow.`);
+      }
+      if (((e.get("receipts") as number | undefined) ?? 0) >= RECEIPT_LIMITS.allUsersPerDay) {
+        throw new HttpsError("resource-exhausted", "Receipt scanning is extra busy today. Please try again tomorrow.");
+      }
+      tx.set(mine, { uid, day, receipts: FieldValue.increment(1) }, { merge: true });
+      tx.set(everyone, { day, receipts: FieldValue.increment(1) }, { merge: true });
+    });
+
+    try {
+      const result = await scanReceipt(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, storeId, imageBase64, type);
+      logger.info("Receipt scanned", { uid, storeId, items: result.items.length, receiptId: result.receiptId });
+      return result;
+    } catch (err) {
+      logger.warn("Receipt scan failed", err);
       throw new HttpsError("internal", (err as Error).message);
     }
   }

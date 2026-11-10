@@ -32,6 +32,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Chuckwagon uses your location once to find your ZIP code and the stores near you."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Chuckwagon uses the camera to read your grocery receipts so meal plans show real store prices."
     scheme: {}
     dependencies:
       - package: Firebase

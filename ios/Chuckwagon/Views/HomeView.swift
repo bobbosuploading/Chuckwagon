@@ -6,6 +6,7 @@ struct HomeView: View {
     @State private var stores: [Store] = []
     @State private var storeId: String?
     @State private var category: DealCategory?
+    @State private var stockUpOnly = false
     @State private var search = ""
     @State private var deals: [Deal] = []
     @State private var loading = false
@@ -13,17 +14,20 @@ struct HomeView: View {
     @State private var showingHeadedTo = false
     @State private var showingSettings = false
     @State private var showingPlans = false
+    @State private var showingReceipt = false
 
     private var myStores: [Store] {
-        let favs = stores.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
-        return favs.isEmpty ? stores : favs
+        let near = prefs.nearby(stores)
+        let favs = near.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
+        return favs.isEmpty ? near : favs
     }
 
     private var currentStore: Store? { stores.first { $0.id == storeId } }
 
     private var visibleDeals: [Deal] {
-        guard !search.isEmpty else { return deals }
-        return deals.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        var shown = stockUpOnly ? deals.filter { $0.stockUp != nil } : deals
+        if !search.isEmpty { shown = shown.filter { $0.name.localizedCaseInsensitiveContains(search) } }
+        return shown
     }
 
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
@@ -52,6 +56,8 @@ struct HomeView: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
+                    Button { showingReceipt = true } label: { Label("Scan a receipt", systemImage: "doc.text.viewfinder") }
+                        .disabled(currentStore == nil)
                     Button { showingSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }
@@ -72,6 +78,9 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
+            .sheet(isPresented: $showingReceipt) {
+                if let store = currentStore { ReceiptScanView(store: store) }
+            }
             .sheet(isPresented: $showingSettings) {
                 NavigationStack {
                     PreferencesForm(showsStores: true)
@@ -149,7 +158,11 @@ struct HomeView: View {
     private var categoryChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip("All", symbol: "square.grid.2x2.fill", selected: category == nil) { category = nil }
+                chip("All", symbol: "square.grid.2x2.fill", selected: category == nil && !stockUpOnly) {
+                    category = nil
+                    stockUpOnly = false
+                }
+                chip("Stock up", symbol: "shippingbox.fill", selected: stockUpOnly) { stockUpOnly.toggle() }
                 ForEach(DealCategory.allCases) { c in
                     chip(c.label, symbol: c.symbol, selected: category == c) { category = c }
                 }
@@ -185,8 +198,14 @@ struct HomeView: View {
                 .card()
                 .padding(.horizontal, 20)
         } else if visibleDeals.isEmpty {
-            ContentUnavailableView("No deals found", systemImage: "tag.slash")
-                .padding(.top, 40)
+            if stockUpOnly {
+                ContentUnavailableView("No stock-up prices", systemImage: "shippingbox",
+                                       description: Text("Nothing here is cheap enough to buy extra of right now. We flag items that are about 30% off or more and keep well."))
+                    .padding(.top, 40)
+            } else {
+                ContentUnavailableView("No deals found", systemImage: "tag.slash")
+                    .padding(.top, 40)
+            }
         } else {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(visibleDeals) { DealCard(deal: $0) }
@@ -264,6 +283,9 @@ struct DealCard: View {
                     .font(Theme.body(.caption2, weight: .medium))
                     .foregroundStyle(Theme.red)
                     .lineLimit(3)
+            }
+            if let tip = deal.stockUp {
+                StockUpBadge(tip: tip)
             }
         }
         .padding(10)

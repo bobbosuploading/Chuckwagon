@@ -30,14 +30,23 @@ function toMarkdown(p: MealPlan): string {
   for (const li of [...p.groceryList].sort((a, b) => a.aisle.localeCompare(b.aisle))) {
     if (li.aisle !== aisle) out.push(`\n**${(aisle = li.aisle)}**`);
     const price = li.onSale
-      ? ` · sale $${li.salePrice?.toFixed(2)} (reg $${li.regularPrice?.toFixed(2)})${li.lineSavings ? `, save $${li.lineSavings.toFixed(2)}` : ""}`
-      : " · regular price";
+      ? ` · sale ${li.salePrice != null ? `$${li.salePrice.toFixed(2)}` : "(ad deal)"}${li.regularPrice != null ? ` (reg $${li.regularPrice.toFixed(2)})` : ""}${li.lineSavings ? `, save $${li.lineSavings.toFixed(2)}` : ""}`
+      : li.lineTotal !== null
+        ? ` · regular $${li.lineTotal.toFixed(2)}${li.priceSource === "estimate" ? " (estimate)" : ""} as ${li.pricedAs}`
+        : " · regular price (no price found)";
     out.push(`- [ ] ${li.item}, ${li.quantityNote} (buy ${li.buyCount})${price}`);
   }
   out.push("");
   out.push(
-    `**Sale items: $${p.totals.saleItems.toFixed(2)} · You save: $${p.totals.savings.toFixed(2)}** (${p.totals.itemsNotPriced} items at regular price not included)`
+    `**Sale items: $${p.totals.saleItems.toFixed(2)} · Regular items: $${p.totals.regularItems.toFixed(2)} · Estimated total: $${p.totals.estimatedTotal.toFixed(2)} · You save: $${p.totals.savings.toFixed(2)}** (${p.totals.itemsNotPriced} items not priced)`
   );
+  if (p.totals.perServing != null) out.push(`About $${p.totals.perServing.toFixed(2)} per serving.`);
+  if (p.budget) {
+    const b = p.budget;
+    out.push(
+      `**Budget $${b.amount.toFixed(2)}: ${b.fits ? `fits, $${b.left.toFixed(2)} left` : `over by $${(-b.left).toFixed(2)}`}**${b.revised ? " (trimmed after the first try came in over)" : ""}`
+    );
+  }
   if (p.notes) out.push(`\n> ${p.notes}`);
   return out.join("\n");
 }

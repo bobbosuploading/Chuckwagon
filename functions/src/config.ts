@@ -33,3 +33,19 @@ export const KROGER_RADIUS_MILES = 50;
 /** Results per search page (Kroger max 50) and pages per term. */
 export const PAGE_SIZE = 50;
 export const PAGES_PER_TERM = 2;
+
+/**
+ * Walmart has no weekly ad. We watch the best-selling items for each search term above,
+ * record their price (for the home ZIP) every run, and call it a deal when the price is
+ * a Rollback/Clearance, shows a crossed-out "was" price, or drops below its usual price.
+ */
+export const WALMART_ITEMS_PER_TERM = 5;
+/** Upper bound on items priced per run (lookups are 20 items per call). */
+export const WALMART_MAX_ITEMS = 300;
+/** Walmart taxonomy IDs to search within. If a search finds nothing there, it retries without one. */
+export const WALMART_CATEGORY_IDS: Partial<Record<Category, string>> & { default: string } = {
+  default: "976759", // Food
+  household: "1115193", // Household Essentials
+};
+/** A price must be at least this far below the usual price to count as a deal. */
+export const WALMART_MIN_DROP = 0.08;
