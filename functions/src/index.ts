@@ -17,7 +17,7 @@ const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 /** Spending guards. Everyday plans cost about half a cent; premium about 17 cents. */
 const LIMITS = {
   freePerDay: 3, // everyday plans per user per day
-  premiumPerDay: 5, // premium plans per premium user per day
+  premiumPerMonth: 10, // premium (Opus) plans per subscriber per month, about $1.70
   allUsersPerDay: 300, // kill switch: total plans per day across everyone
 };
 
@@ -35,21 +35,23 @@ async function reservePlan(db: Firestore, uid: string, premium: boolean): Promis
   const userRef = db.collection("users").doc(uid);
   const mine = db.collection("usage").doc(`${uid}_${day}`);
   const everyone = db.collection("usage").doc(`all_${day}`);
+  const month = db.collection("usage").doc(`${uid}_${day.slice(0, 7)}`);
   await db.runTransaction(async (tx) => {
-    const [user, m, e] = await Promise.all([tx.get(userRef), tx.get(mine), tx.get(everyone)]);
+    const [user, m, e, mo] = await Promise.all([tx.get(userRef), tx.get(mine), tx.get(everyone), tx.get(month)]);
     if (premium && user.get("premium") !== true) {
       throw new HttpsError("permission-denied", "Chef's pick is a premium feature. It's coming soon!");
     }
-    const field = premium ? "premium" : "free";
-    const used = (m.get(field) as number | undefined) ?? 0;
-    const limit = premium ? LIMITS.premiumPerDay : LIMITS.freePerDay;
-    if (used >= limit) {
-      throw new HttpsError("resource-exhausted", `You've made ${limit} plans today. Your saved plans are under My plans, and you can make more tomorrow.`);
+    if (premium && ((mo.get("premium") as number | undefined) ?? 0) >= LIMITS.premiumPerMonth) {
+      throw new HttpsError("resource-exhausted", `You've used all ${LIMITS.premiumPerMonth} Chef's picks this month. Everyday plans still work.`);
+    }
+    if (!premium && ((m.get("free") as number | undefined) ?? 0) >= LIMITS.freePerDay) {
+      throw new HttpsError("resource-exhausted", `You've made ${LIMITS.freePerDay} plans today. Your saved plans are under My plans, and you can make more tomorrow.`);
     }
     if (((e.get("total") as number | undefined) ?? 0) >= LIMITS.allUsersPerDay) {
       throw new HttpsError("resource-exhausted", "Chuckwagon is extra busy today. Please try again tomorrow.");
     }
-    tx.set(mine, { uid, day, [field]: FieldValue.increment(1) }, { merge: true });
+    if (premium) tx.set(month, { uid, month: day.slice(0, 7), premium: FieldValue.increment(1) }, { merge: true });
+    else tx.set(mine, { uid, day, free: FieldValue.increment(1) }, { merge: true });
     tx.set(everyone, { day, total: FieldValue.increment(1) }, { merge: true });
   });
 }
