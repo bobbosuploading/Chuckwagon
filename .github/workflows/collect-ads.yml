@@ -1,0 +1,39 @@
+name: Collect ALDI and Dollar General ads
+
+# ALDI's ad starts Wednesday and Dollar General's on Sunday. Load both Monday, Wednesday and Friday.
+on:
+  schedule:
+    - cron: "30 12 * * 1,3,5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show the deals, don't save them"
+        type: boolean
+        default: true
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Write Firebase credentials
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Collect
+        run: node lib/cli-ads.js
+        env:
+          HOME_ZIP: "77437"
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json

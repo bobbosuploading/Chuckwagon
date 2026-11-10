@@ -5,6 +5,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import Anthropic from "@anthropic-ai/sdk";
 import { planMeals, PlanRequest } from "./plan";
+import { scanReceipt } from "./receipts";
 
 initializeApp();
 
@@ -101,6 +102,55 @@ export const planMealsForStore = onCall(
       return { id: ref.id, ...plan };
     } catch (err) {
       logger.error("Plan failed", err);
+      throw new HttpsError("internal", (err as Error).message);
+    }
+  }
+);
+
+/** Receipt scans cost about a third of a cent each (Haiku reading one photo). */
+const RECEIPT_LIMITS = { perUserPerDay: 10, allUsersPerDay: 500 };
+
+/**
+ * "Scan a receipt": reads a receipt photo and saves its everyday prices for that store,
+ * so meal plans can price items that aren't on sale. Data: { storeId, imageBase64, mediaType }.
+ */
+export const scanReceiptPhoto = onCall(
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan receipts");
+    const { storeId, imageBase64, mediaType } = (request.data ?? {}) as {
+      storeId?: string;
+      imageBase64?: string;
+      mediaType?: string;
+    };
+    if (!storeId || !imageBase64) throw new HttpsError("invalid-argument", "storeId and imageBase64 are required");
+    if (imageBase64.length > 7_000_000) throw new HttpsError("invalid-argument", "That photo is too large.");
+    const type = (["image/jpeg", "image/png", "image/webp"].includes(mediaType ?? "") ? mediaType : "image/jpeg") as
+      "image/jpeg" | "image/png" | "image/webp";
+
+    const db = getFirestore();
+    const uid = request.auth.uid;
+    const day = today();
+    const mine = db.collection("usage").doc(`${uid}_${day}`);
+    const everyone = db.collection("usage").doc(`all_${day}`);
+    await db.runTransaction(async (tx) => {
+      const [m, e] = await Promise.all([tx.get(mine), tx.get(everyone)]);
+      if (((m.get("receipts") as number | undefined) ?? 0) >= RECEIPT_LIMITS.perUserPerDay) {
+        throw new HttpsError("resource-exhausted", `You've scanned ${RECEIPT_LIMITS.perUserPerDay} receipts today. Thanks! Try again tomorrow.`);
+      }
+      if (((e.get("receipts") as number | undefined) ?? 0) >= RECEIPT_LIMITS.allUsersPerDay) {
+        throw new HttpsError("resource-exhausted", "Receipt scanning is extra busy today. Please try again tomorrow.");
+      }
+      tx.set(mine, { uid, day, receipts: FieldValue.increment(1) }, { merge: true });
+      tx.set(everyone, { day, receipts: FieldValue.increment(1) }, { merge: true });
+    });
+
+    try {
+      const result = await scanReceipt(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, storeId, imageBase64, type);
+      logger.info("Receipt scanned", { uid, storeId, items: result.items.length, receiptId: result.receiptId });
+      return result;
+    } catch (err) {
+      logger.warn("Receipt scan failed", err);
       throw new HttpsError("internal", (err as Error).message);
     }
   }

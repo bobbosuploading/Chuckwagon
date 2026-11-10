@@ -1,0 +1,137 @@
+/**
+ * Receipt scanning: a shopper photographs a receipt, Claude reads the lines, and the
+ * everyday prices go into receiptPrices/{storeId}. This is how we learn shelf prices
+ * for stores with no API (H-E-B, ALDI, Dollar General), using data shoppers give us.
+ */
+import Anthropic from "@anthropic-ai/sdk";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { Firestore, Timestamp } from "firebase-admin/firestore";
+import { z } from "zod";
+import { fitToDoc, PriceBookItem, words } from "./priceBook";
+
+export const RECEIPT_MODEL = "claude-haiku-5-5";
+
+const ReceiptSchema = z.object({
+  isReceipt: z.boolean().describe("False if the image is not a grocery store receipt"),
+  storeName: z.string().nullable(),
+  date: z.string().nullable().describe("Purchase date as YYYY-MM-DD, if printed"),
+  items: z.array(
+    z.object({
+      name: z.string().describe("Plain product name with abbreviations spelled out, e.g. 'H-E-B ground beef 80/20'"),
+      receiptText: z.string().describe("The line exactly as printed"),
+      size: z.string().nullable().describe("Package size if printed, e.g. '16 oz'"),
+      quantity: z.number().describe("Units bought (1 if not shown). For weighed items, 1."),
+      pounds: z.number().nullable().describe("For weighed items: pounds bought. Otherwise null."),
+      linePrice: z.number().describe("What the shopper paid for the line, before any separate coupon lines"),
+      regularPrice: z.number().nullable().describe("Regular unit price if the receipt shows it (e.g. 'reg 3.49'), else null"),
+      category: z.enum(["meat", "seafood", "produce", "dairy", "bakery", "pantry", "frozen", "household"]),
+    })
+  ),
+});
+
+const SYSTEM = `You read grocery store receipts. List every purchased product line with what was paid.
+Spell out receipt abbreviations into a plain product name a shopper would recognize. Skip totals, tax,
+payment, coupons, discounts, bag fees, deposits, and anything that isn't a product. If a line shows a
+weight and a per-lb price, fill pounds. If the image isn't a receipt, set isReceipt to false.`;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export interface ScanResult {
+  receiptId: string;
+  storeName: string | null;
+  date: string | null;
+  items: PriceBookItem[];
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export async function scanReceipt(
+  db: Firestore,
+  anthropic: Anthropic,
+  uid: string,
+  storeId: string,
+  imageBase64: string,
+  mediaType: "image/jpeg" | "image/png" | "image/heic" | "image/webp"
+): Promise<ScanResult> {
+  const store = await db.doc(`stores/${storeId}`).get();
+  if (!store.exists) throw new Error(`Unknown store ${storeId}`);
+
+  const response = await anthropic.beta.messages.parse({
+    model: RECEIPT_MODEL,
+    max_tokens: 8000,
+    output_config: { format: betaZodOutputFormat(ReceiptSchema) },
+    system: SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: [
+          // HEIC isn't accepted by the API; the app sends JPEG.
+          { type: "image", source: { type: "base64", media_type: mediaType === "image/heic" ? "image/jpeg" : mediaType, data: imageBase64 } },
+          { type: "text", text: `Receipt from ${store.get("name")}. List the products and prices.` },
+        ],
+      },
+    ],
+  });
+  const r = response.parsed_output;
+  if (!r) throw new Error("Couldn't read that receipt. Try a flatter, brighter photo.");
+  if (!r.isReceipt) throw new Error("That doesn't look like a grocery receipt.");
+
+  const seenAt = r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : new Date().toISOString().slice(0, 10);
+  const items: PriceBookItem[] = [];
+  for (const it of r.items) {
+    if (!(it.linePrice > 0)) continue;
+    const byWeight = it.pounds !== null && it.pounds > 0;
+    const unit = byWeight ? it.linePrice / it.pounds! : it.linePrice / Math.max(it.quantity || 1, 1);
+    // Prefer the printed regular price, so a sale price doesn't become the "everyday" price.
+    const price = round2(it.regularPrice && it.regularPrice > 0 ? it.regularPrice : unit);
+    if (!(price > 0 && price < 500)) continue;
+    items.push({
+      name: it.name.slice(0, 90),
+      size: it.size,
+      price,
+      promo: it.regularPrice && unit < it.regularPrice ? round2(unit) : null,
+      soldBy: byWeight ? "WEIGHT" : "UNIT",
+      category: it.category,
+      source: "receipt",
+      seenAt,
+    });
+  }
+
+  // Merge into the store's receipt book: one entry per product name, newest price wins.
+  const ref = db.doc(`receiptPrices/${storeId}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const existing = (snap.get("items") as PriceBookItem[] | undefined) ?? [];
+    const key = (p: PriceBookItem) => `${words(p.name).join(" ")}|${p.size ?? ""}`;
+    const merged = new Map(existing.map((p) => [key(p), p]));
+    for (const p of items) {
+      const old = merged.get(key(p));
+      if (!old || old.seenAt <= p.seenAt) merged.set(key(p), p);
+    }
+    tx.set(ref, {
+      storeId,
+      chain: store.get("chain") ?? null,
+      items: fitToDoc([...merged.values()]),
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  // Keep the parsed receipt (not the photo) so prices can be traced and bad scans removed.
+  const saved = await db.collection("receipts").add({
+    uid,
+    storeId,
+    storeName: r.storeName,
+    date: seenAt,
+    lines: r.items,
+    at: Timestamp.now(),
+  });
+
+  return {
+    receiptId: saved.id,
+    storeName: r.storeName,
+    date: seenAt,
+    items,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
+}
