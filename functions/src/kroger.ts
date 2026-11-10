@@ -11,6 +11,7 @@ export interface KrogerStore {
   chain: string;
   name: string;
   address: { addressLine1?: string; city?: string; state?: string; zipCode?: string };
+  geolocation?: { latitude: number; longitude: number };
 }
 
 export interface KrogerProduct {

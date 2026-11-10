@@ -95,6 +95,9 @@ struct PlanView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(plan.meals.count) meals").font(Theme.body(.subheadline, weight: .bold)).foregroundStyle(.white)
+                if let total = plan.totals.estimatedTotal, total > plan.totals.saleItems {
+                    Text("About \(total.dollars) total").font(Theme.body(.caption, weight: .bold)).foregroundStyle(.white)
+                }
                 Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
             }
         }
@@ -130,6 +133,13 @@ struct ListItemRow: View {
                         if let save = item.lineSavings, save > 0 {
                             Text("save \(save.dollars)").font(.caption2.bold()).foregroundStyle(Color.chuckRed)
                         }
+                    }
+                } else if let total = item.lineTotal {
+                    // Not on sale: everyday price from the store's price book or a receipt.
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(total.dollars).font(.subheadline).foregroundStyle(Theme.ink.opacity(0.75))
+                        Text(item.priceSource == "estimate" ? "est. price" : "regular")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }

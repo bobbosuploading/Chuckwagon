@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { Category } from "./config";
 import type { Deal } from "./collectKroger";
 import { StockUp, stockUpTip } from "./stockUp";
+import { MATCH_MODEL, priceRegularItems } from "./priceItems";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -129,6 +130,11 @@ export interface PricedListItem {
   lineTotal: number | null;
   lineSavings: number | null;
   forMeals: string[];
+  /** For items not on sale: where the price came from ("store", "receipt", or "estimate"
+   *  when we have no prices for this store and a nearby store's price stands in). */
+  priceSource?: "store" | "receipt" | "estimate" | null;
+  /** For items not on sale: the product that was priced, e.g. "Kroger Garlic | 3 ct". */
+  pricedAs?: string | null;
   /** Where to buy it. Non-sale items go to the store with the most items. */
   storeId: string;
   storeName: string;
@@ -143,6 +149,8 @@ export interface StoreTotal {
   items: number;
   saleItems: number;
   savings: number;
+  /** Everything priced at this store, sale and regular. */
+  total: number;
 }
 
 export interface MealPlan {
@@ -156,7 +164,15 @@ export interface MealPlan {
   meals: ModelPlan["meals"];
   groceryList: PricedListItem[];
   notes: string;
-  totals: { saleItems: number; savings: number; itemsNotPriced: number };
+  totals: {
+    saleItems: number;
+    savings: number;
+    itemsNotPriced: number;
+    /** Items not on sale, at everyday prices. */
+    regularItems: number;
+    /** saleItems + regularItems. Items we couldn't price are not included. */
+    estimatedTotal: number;
+  };
   usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | null };
   createdAt: string;
 }
@@ -282,10 +298,9 @@ ${lines}`;
   const groceryList: PricedListItem[] = plan.groceryList.map((li) => {
     const deal = li.dealId ? deals.get(li.dealId) : undefined;
     if (!deal) {
-      itemsNotPriced++;
       return {
         ...li, dealId: null, onSale: false, salePrice: null, regularPrice: null, lineTotal: null, lineSavings: null,
-        storeId: mainStore, storeName: storeNames.get(mainStore)!, stockUp: null, checked: false,
+        priceSource: null, pricedAs: null, storeId: mainStore, storeName: storeNames.get(mainStore)!, stockUp: null, checked: false,
       };
     }
     // Weight-priced items have per-lb prices, so multiply by the estimated pounds instead of the package count.
@@ -312,6 +327,34 @@ ${lines}`;
     };
   });
 
+  // Price the items that aren't on sale from each store's everyday prices.
+  const regular = groceryList.filter((li) => !li.onSale);
+  const matched = await priceRegularItems(
+    db,
+    anthropic,
+    regular.map((li) => ({ item: li.item, quantityNote: li.quantityNote, buyCount: li.buyCount, storeId: li.storeId }))
+  ).catch((err) => {
+    // Pricing regular items is a bonus; never fail the plan over it.
+    console.warn("Regular-price matching failed", err);
+    return { prices: regular.map(() => null), inputTokens: 0, outputTokens: 0 };
+  });
+  let regularItems = 0;
+  regular.forEach((li, i) => {
+    const p = matched.prices[i];
+    if (!p) {
+      itemsNotPriced++;
+      return;
+    }
+    li.regularPrice = p.unitPrice;
+    li.lineTotal = p.lineTotal;
+    li.priceSource = p.source;
+    const qty = p.perLb ? ` | ${p.quantity} lb` : p.quantity > 1 ? ` | x${p.quantity}` : "";
+    li.pricedAs = `${p.product}${p.size ? ` | ${p.size}` : ""}${qty}`;
+    regularItems += p.lineTotal;
+  });
+  regularItems = round2(regularItems);
+  const estimatedTotal = round2(saleItems + regularItems);
+
   // Totals per store, busiest store first.
   const stores: StoreTotal[] = storeIds
     .map((id) => {
@@ -320,8 +363,9 @@ ${lines}`;
         storeId: id,
         storeName: storeNames.get(id)!,
         items: items.length,
-        saleItems: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
+        saleItems: round2(items.reduce((t, li) => t + (li.onSale ? li.lineTotal ?? 0 : 0), 0)),
         savings: round2(items.reduce((t, li) => t + (li.lineSavings ?? 0), 0)),
+        total: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
       };
     })
     .filter((s) => s.items > 0)
@@ -349,9 +393,18 @@ ${lines}`;
     }),
   }));
 
+  if (req.budget && estimatedTotal > req.budget) {
+    notes += `${notes ? " " : ""}Heads up: the estimated total is $${estimatedTotal.toFixed(2)}, over your $${req.budget} budget.`;
+  }
+
   const price = PRICES[response.model] ?? PRICES[model];
-  const inputTokens = response.usage.input_tokens;
-  const outputTokens = response.usage.output_tokens;
+  const matchPrice = PRICES[MATCH_MODEL];
+  const inputTokens = response.usage.input_tokens + matched.inputTokens;
+  const outputTokens = response.usage.output_tokens + matched.outputTokens;
+  const costUsd = price
+    ? (response.usage.input_tokens * price[0] + response.usage.output_tokens * price[1] +
+        matched.inputTokens * matchPrice[0] + matched.outputTokens * matchPrice[1]) / 1e6
+    : null;
 
   return {
     storeId: req.storeId,
@@ -364,11 +417,11 @@ ${lines}`;
     meals,
     groceryList,
     notes,
-    totals: { saleItems: round2(saleItems), savings: round2(savings), itemsNotPriced },
+    totals: { saleItems: round2(saleItems), savings: round2(savings), itemsNotPriced, regularItems, estimatedTotal },
     usage: {
       inputTokens,
       outputTokens,
-      estimatedCostUsd: price ? Math.round(((inputTokens * price[0] + outputTokens * price[1]) / 1e6) * 10000) / 10000 : null,
+      estimatedCostUsd: costUsd !== null ? Math.round(costUsd * 10000) / 10000 : null,
     },
     createdAt: new Date().toISOString(),
   };
