@@ -102,7 +102,7 @@ On a meal plan's grocery list, **Send to cart** has one button per store (items 
 
 - **Kroger family stores:** "Add to my Kroger cart". The shopper signs in with Kroger once. The backend swaps the sign-in code for tokens (`krogerCallback`) and keeps them in `krogerTokens/{uid}` (backend-only). The phone gets a short-lived token (`krogerAccessToken`) and itself searches products and calls Kroger's cart API, because Kroger blocks product and cart calls from Google Cloud. Sale items use their exact product; other items use the first match at that store. Items go in for pickup.
 - **Walmart:** "Add to my Walmart cart" opens Walmart's add-to-cart link (`affil.walmart.com/cart/addToCart?items=ID|QTY,...`) with the plan's Walmart sale items. Items that aren't on sale have no Walmart item id yet, so the app lists them for the shopper to add by hand. Runs on the phone only; no backend setup.
-- **H-E-B and every other store:** "Shop on Instacart". `instacartShoppingList` makes an Instacart shopping list page for that store's items and the app opens it; the shopper picks H-E-B (or another store) in Instacart.
+- **H-E-B and every other store:** "Share list" for now: the iOS share sheet with that store's list grouped by aisle (to Reminders, Notes, Messages...). Instacart isn't taking new developers yet. Once it is, set `SendToCart.instacartEnabled = true` in the app and the button becomes "Shop on Instacart". `instacartShoppingList` makes an Instacart shopping list page for that store's items and the app opens it; the shopper picks H-E-B (or another store) in Instacart.
 
 Setup (all optional; without them the buttons just say the feature isn't set up):
 

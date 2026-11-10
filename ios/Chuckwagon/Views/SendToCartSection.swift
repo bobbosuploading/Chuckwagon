@@ -24,26 +24,22 @@ struct SendToCartSection: View {
         Section {
             ForEach(stores, id: \.id) { store in
                 let left = items(at: store.id).count
-                Button {
-                    Task { await send(storeId: store.id, storeName: store.name) }
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: icon(store.id)).foregroundStyle(Theme.red).frame(width: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(label(store.id, store.name)).font(Theme.body(.subheadline, weight: .semibold))
-                                .foregroundStyle(Theme.ink)
-                            Text(left == 0 ? "Everything is checked off" : "\(left) item\(left == 1 ? "" : "s") not checked off")
-                                .font(Theme.body(.caption)).foregroundStyle(Theme.ink.opacity(0.6))
-                        }
-                        Spacer()
-                        if busyStore == store.id { ProgressView() }
-                        else { Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary) }
+                if case .share = SendToCart.route(forStoreId: store.id) {
+                    ShareLink(item: SendToCart.shareText(storeName: store.name, items: items(at: store.id))) {
+                        row(store: store, left: left)
                     }
+                    .disabled(left == 0)
+                } else {
+                    Button {
+                        Task { await send(storeId: store.id, storeName: store.name) }
+                    } label: {
+                        row(store: store, left: left)
+                    }
+                    .disabled(busyStore != nil || left == 0)
                 }
-                .disabled(busyStore != nil || left == 0)
             }
         } header: {
-            Text("Send to cart")
+            Text("Send to cart or share")
         } footer: {
             Text("Prices in the cart may differ a little from the ad. Items you check off are left out.")
         }
@@ -73,10 +69,26 @@ struct SendToCartSection: View {
         }
     }
 
+    private func row(store: (id: String, name: String), left: Int) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon(store.id)).foregroundStyle(Theme.red).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label(store.id, store.name)).font(Theme.body(.subheadline, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                Text(left == 0 ? "Everything is checked off" : "\(left) item\(left == 1 ? "" : "s") not checked off")
+                    .font(Theme.body(.caption)).foregroundStyle(Theme.ink.opacity(0.6))
+            }
+            Spacer()
+            if busyStore == store.id { ProgressView() }
+            else { Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary) }
+        }
+    }
+
     private func icon(_ storeId: String) -> String {
         switch SendToCart.route(forStoreId: storeId) {
         case .kroger, .walmart: return "cart.fill.badge.plus"
         case .instacart: return "bag.fill"
+        case .share: return "square.and.arrow.up"
         }
     }
 
@@ -85,6 +97,7 @@ struct SendToCartSection: View {
         case .kroger: return "Add to my \(name) cart"
         case .walmart: return "Add to my Walmart cart"
         case .instacart: return "Shop \(name) list on Instacart"
+        case .share: return "Share \(name) list"
         }
     }
 
@@ -96,6 +109,8 @@ struct SendToCartSection: View {
             case .instacart:
                 let url = try await SendToCart.instacartLink(planId: plan.id, storeId: storeId)
                 openURL(url)
+            case .share:
+                return // handled by ShareLink
             case .walmart:
                 let link = SendToCart.walmartCartLink(items: items(at: storeId))
                 guard let url = link.url else {

@@ -9,14 +9,18 @@ import UIKit
 /// backend's servers). The backend only handles sign-in and hands out short-lived tokens.
 /// Everything else: an Instacart shopping list the shopper opens in Instacart.
 enum SendToCart {
-    enum Route { case kroger(locationId: String), walmart, instacart }
+    enum Route { case kroger(locationId: String), walmart, instacart, share }
+
+    /// Instacart isn't taking new developers yet, so other stores get a "Share list" button.
+    /// Flip this once INSTACART_API_KEY is set and deployed.
+    static let instacartEnabled = false
 
     /// Kroger family store ids look like `kroger-{locationId}`, Walmart ids `walmart-{storeNo}`.
     /// Every other store goes through Instacart (Walmart isn't on Instacart).
     static func route(forStoreId storeId: String) -> Route {
         if storeId.hasPrefix("kroger-") { return .kroger(locationId: String(storeId.dropFirst("kroger-".count))) }
         if storeId.hasPrefix("walmart-") { return .walmart }
-        return .instacart
+        return instacartEnabled ? .instacart : .share
     }
 
     struct Result {
@@ -62,6 +66,27 @@ enum SendToCart {
         guard let dealId, dealId.hasPrefix("walmart-"), let r = dealId.range(of: "_wm-") else { return nil }
         let id = String(dealId[r.upperBound...])
         return !id.isEmpty && id.allSatisfy(\.isNumber) ? id : nil
+    }
+
+    // MARK: Share
+
+    /// Plain-text list for the share sheet (Reminders, Notes, Messages...), grouped by aisle.
+    static func shareText(storeName: String, items: [MealPlan.ListItem]) -> String {
+        let order = ["Produce", "Meat", "Seafood", "Dairy", "Bakery", "Frozen", "Pantry", "Other"]
+        let byAisle = Dictionary(grouping: items, by: \.aisle)
+            .sorted { (order.firstIndex(of: $0.key) ?? 99) < (order.firstIndex(of: $1.key) ?? 99) }
+        var lines = ["\(storeName) list from Chuckwagon"]
+        for (aisle, list) in byAisle {
+            lines.append("")
+            lines.append(aisle.uppercased())
+            for li in list {
+                var line = "- \(li.item)"
+                if !li.quantityNote.isEmpty { line += " (\(li.quantityNote))" }
+                if li.onSale, let p = li.salePrice { line += " · on sale \(p.dollars)" }
+                lines.append(line)
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: Instacart
