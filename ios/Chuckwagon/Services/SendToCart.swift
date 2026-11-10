@@ -9,12 +9,18 @@ import UIKit
 /// backend's servers). The backend only handles sign-in and hands out short-lived tokens.
 /// Everything else: an Instacart shopping list the shopper opens in Instacart.
 enum SendToCart {
-    enum Route { case kroger(locationId: String), instacart }
+    enum Route { case kroger(locationId: String), walmart, instacart, share }
 
-    /// Kroger family store ids look like `kroger-{locationId}`; every other store goes through Instacart.
+    /// Instacart isn't taking new developers yet, so other stores get a "Share list" button.
+    /// Flip this once INSTACART_API_KEY is set and deployed.
+    static let instacartEnabled = false
+
+    /// Kroger family store ids look like `kroger-{locationId}`, Walmart ids `walmart-{storeNo}`.
+    /// Every other store goes through Instacart (Walmart isn't on Instacart).
     static func route(forStoreId storeId: String) -> Route {
         if storeId.hasPrefix("kroger-") { return .kroger(locationId: String(storeId.dropFirst("kroger-".count))) }
-        return .instacart
+        if storeId.hasPrefix("walmart-") { return .walmart }
+        return instacartEnabled ? .instacart : .share
     }
 
     struct Result {
@@ -31,6 +37,56 @@ enum SendToCart {
             case .cancelled: "Kroger sign-in was cancelled."
             }
         }
+    }
+
+    // MARK: Walmart
+
+    /// Walmart's add-to-cart link: opens walmart.com (or the Walmart app) with the items in the cart.
+    /// Only sale items carry a Walmart item id (`walmart-{storeNo}_wm-{itemId}`); the rest are
+    /// returned in `notAdded` for the shopper to add by hand.
+    static func walmartCartLink(items: [MealPlan.ListItem]) -> (url: URL?, added: [String], notAdded: [String]) {
+        var parts: [String] = []
+        var added: [String] = []
+        var notAdded: [String] = []
+        for item in items {
+            if let id = walmartItemId(item.dealId) {
+                parts.append("\(id)|\(max(1, item.buyCount))")
+                added.append(item.item)
+            } else {
+                notAdded.append(item.item)
+            }
+        }
+        guard !parts.isEmpty else { return (nil, added, notAdded) }
+        var comps = URLComponents(string: "https://affil.walmart.com/cart/addToCart")!
+        comps.queryItems = [.init(name: "items", value: parts.joined(separator: ","))]
+        return (comps.url, added, notAdded)
+    }
+
+    static func walmartItemId(_ dealId: String?) -> String? {
+        guard let dealId, dealId.hasPrefix("walmart-"), let r = dealId.range(of: "_wm-") else { return nil }
+        let id = String(dealId[r.upperBound...])
+        return !id.isEmpty && id.allSatisfy(\.isNumber) ? id : nil
+    }
+
+    // MARK: Share
+
+    /// Plain-text list for the share sheet (Reminders, Notes, Messages...), grouped by aisle.
+    static func shareText(storeName: String, items: [MealPlan.ListItem]) -> String {
+        let order = ["Produce", "Meat", "Seafood", "Dairy", "Bakery", "Frozen", "Pantry", "Other"]
+        let byAisle = Dictionary(grouping: items, by: \.aisle)
+            .sorted { (order.firstIndex(of: $0.key) ?? 99) < (order.firstIndex(of: $1.key) ?? 99) }
+        var lines = ["\(storeName) list from Chuckwagon"]
+        for (aisle, list) in byAisle {
+            lines.append("")
+            lines.append(aisle.uppercased())
+            for li in list {
+                var line = "- \(li.item)"
+                if !li.quantityNote.isEmpty { line += " (\(li.quantityNote))" }
+                if li.onSale, let p = li.salePrice { line += " · on sale \(p.dollars)" }
+                lines.append(line)
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: Instacart
