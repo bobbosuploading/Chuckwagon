@@ -30,3 +30,23 @@ echo "== heb.com reachability =="
 for u in https://www.heb.com/ https://www.heb.com/weekly-ad https://publications.heb.com/; do
   curl -s -m 30 -A "$UA" -o /dev/null -w "$u http=%{http_code}\n" "$u"
 done
+echo "== H-E-B flyer items =="
+FID=$(python3 -c "
+import json; d=json.load(open('flyers.json')); f=d if isinstance(d,list) else d.get('flyers',[])
+h=[x for x in f if x.get('merchant')=='H-E-B']; h.sort(key=lambda x:x.get('valid_from')); print(h[-1]['id'])")
+for path in "flipp/flyers/$FID?locale=en-us" "flipp/flyers/$FID/flyer_items?locale=en-us"; do
+  curl -s -m 30 -A "$UA" "https://backflipp.wishabi.com/$path" -o fi.json -w "$path http=%{http_code}\n"
+  python3 - <<'PY'
+import json
+try: d=json.load(open("fi.json"))
+except Exception as e: print("  not json"); raise SystemExit
+items=d if isinstance(d,list) else d.get("items") or d.get("flyer_items") or []
+print("  top keys:", list(d.keys())[:20] if isinstance(d,dict) else "list", "items:", len(items))
+if items:
+    print("  item keys:", sorted(items[0].keys()))
+    for i in items[:6]: print("   ", json.dumps(i)[:400])
+    from collections import Counter
+    for k in ["category","_L1","_L2","item_type"]:
+        if k in items[0]: print("  ", k, Counter(i.get(k) for i in items).most_common(25))
+PY
+done
