@@ -191,3 +191,6 @@ export const scanReceiptPhoto = onCall(
     }
   }
 );
+
+// Send to cart: Kroger sign-in and Instacart shopping lists (see cart.ts).
+export { krogerConnectUrl, krogerCallback, krogerAccessToken, krogerDisconnect, instacartShoppingList } from "./cart";

@@ -196,12 +196,13 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var priceSource: String?
         /// For items not on sale: the product that was priced.
         var pricedAs: String?
+        var storeId: String?
         /// Set on the phone only; the backend never sends it.
         var checked = false
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs, stockUp
+            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs, stockUp, storeId
         }
     }
 
