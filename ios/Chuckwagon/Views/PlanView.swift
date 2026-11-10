@@ -45,6 +45,10 @@ struct PlanView: View {
         List {
             Section {
                 savingsHeader
+                if let budget = plan.budget {
+                    BudgetMeter(budget: budget, total: plan.totals.estimatedTotal ?? plan.totals.saleItems,
+                                perServing: plan.totals.perServing, unpriced: plan.totals.itemsNotPriced)
+                }
                 Picker("View", selection: $tab) {
                     ForEach(Tab.allCases, id: \.self) { Text($0.rawValue) }
                 }
@@ -105,6 +109,48 @@ struct PlanView: View {
         .background(Theme.red, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
+    }
+}
+
+/// "Budget $60 · about $54 · $6 left", with a bar that turns red when the list runs over.
+struct BudgetMeter: View {
+    let budget: MealPlan.Budget
+    let total: Double
+    var perServing: Double?
+    var unpriced = 0
+
+    private var fraction: Double { budget.amount > 0 ? min(total / budget.amount, 1) : 0 }
+    private var tint: Color { budget.fits ? Theme.sage : Theme.red }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Budget \(budget.amount.wholeDollars)", systemImage: "dollarsign.circle.fill")
+                    .font(Theme.body(.subheadline, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Text(budget.fits ? "\(budget.left.dollars) left" : "\((-budget.left).dollars) over")
+                    .font(Theme.body(.subheadline, weight: .heavy))
+                    .foregroundStyle(tint)
+            }
+            ProgressView(value: fraction)
+                .tint(tint)
+            HStack {
+                Text("About \(total.dollars) for this list")
+                if let perServing {
+                    Text("·")
+                    Text("\(perServing.dollars) a serving")
+                }
+            }
+            .font(Theme.body(.caption))
+            .foregroundStyle(Theme.ink.opacity(0.6))
+            if unpriced > 0 {
+                Text("\(unpriced) item\(unpriced == 1 ? " has" : "s have") no price yet, so leave a little room.")
+                    .font(Theme.body(.caption2))
+                    .foregroundStyle(Theme.ink.opacity(0.5))
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

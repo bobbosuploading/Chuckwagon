@@ -68,6 +68,29 @@ struct HeadedToView: View {
             } footer: {
                 Text("Changes here are saved for next time too.")
             }
+            Section {
+                Toggle("Stick to a budget", isOn: Binding(
+                    get: { prefs.weeklyBudget > 0 },
+                    set: { prefs.weeklyBudget = $0 ? Preferences.defaultBudget : 0 }
+                ))
+                if prefs.weeklyBudget > 0 {
+                    Stepper(value: $prefs.weeklyBudget, in: 20...500, step: 5) {
+                        HStack {
+                            Text("I have")
+                            Spacer()
+                            Text(Double(prefs.weeklyBudget).wholeDollars)
+                                .font(Theme.body(.body, weight: .bold))
+                                .foregroundStyle(Theme.red)
+                        }
+                    }
+                }
+            } header: {
+                Text("Budget")
+            } footer: {
+                Text(prefs.weeklyBudget > 0
+                     ? "We'll build the meals and the whole list to fit, sale and everyday items together."
+                     : "Turn this on and we'll plan around what you have to spend this trip.")
+            }
             if !otherStores.isEmpty {
                 Section {
                     ForEach(otherStores) { other in

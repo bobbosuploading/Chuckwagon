@@ -62,6 +62,11 @@ private struct PlanRow: View {
         return "\(done)/\(plan.groceryList.count) items"
     }
 
+    private var budgetNote: String? {
+        guard let budget = plan.budget else { return nil }
+        return budget.fits ? "under \(budget.amount.wholeDollars) budget" : "over \(budget.amount.wholeDollars) budget"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -77,7 +82,7 @@ private struct PlanRow: View {
                 .font(Theme.body(.subheadline))
                 .foregroundStyle(Theme.ink.opacity(0.75))
                 .lineLimit(2)
-            Text("\(plan.storeName) · \(progress)")
+            Text([plan.storeName, progress, budgetNote].compactMap { $0 }.joined(separator: " · "))
                 .font(Theme.body(.caption))
                 .foregroundStyle(Theme.ink.opacity(0.5))
         }

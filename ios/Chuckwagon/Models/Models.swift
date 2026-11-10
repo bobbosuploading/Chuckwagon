@@ -125,6 +125,17 @@ struct MealPlan: Codable, Identifiable, Hashable {
     var totals: Totals
     var createdAt: String?
     var stores: [StoreTotal]?
+    /// Only when the shopper set a budget.
+    var budget: Budget?
+
+    struct Budget: Codable, Hashable {
+        var amount: Double
+        /// amount minus the estimated total; negative when over.
+        var left: Double
+        var fits: Bool
+        /// True when the first try came in over budget and the planner trimmed it.
+        var revised: Bool?
+    }
 
     struct StoreTotal: Codable, Hashable {
         var storeId: String
@@ -202,9 +213,13 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var regularItems: Double?
         /// Sale + regular items (unpriced items not included). Older plans don't have it.
         var estimatedTotal: Double?
+        /// Estimated total divided by all servings. Older plans don't have it.
+        var perServing: Double?
     }
 }
 
 extension Double {
     var dollars: String { formatted(.currency(code: "USD")) }
+    /// "$60" with no cents, for budgets.
+    var wholeDollars: String { formatted(.currency(code: "USD").precision(.fractionLength(0))) }
 }
