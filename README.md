@@ -95,3 +95,21 @@ before a paid launch: set the repository variable `HEB_PRICES_ENABLED` to `false
 Setup: make a free account at apify.com, copy your API token (Settings > API & Integrations), and
 save it as the repository secret `APIFY_TOKEN`. Then try **Actions > Collect H-E-B everyday prices >
 Run workflow** (dry run, 20 products, about 14 cents).
+
+## Send to cart
+
+On a meal plan's grocery list, **Send to cart** has one button per store (items already checked off are left out):
+
+- **Kroger family stores:** "Add to my Kroger cart". The shopper signs in with Kroger once. The backend swaps the sign-in code for tokens (`krogerCallback`) and keeps them in `krogerTokens/{uid}` (backend-only). The phone gets a short-lived token (`krogerAccessToken`) and itself searches products and calls Kroger's cart API, because Kroger blocks product and cart calls from Google Cloud. Sale items use their exact product; other items use the first match at that store. Items go in for pickup.
+- **H-E-B and every other store:** "Shop on Instacart". `instacartShoppingList` makes an Instacart shopping list page for that store's items and the app opens it; the shopper picks H-E-B (or another store) in Instacart.
+
+Setup (all optional; without them the buttons just say the feature isn't set up):
+
+| Where | Name | Value |
+|---|---|---|
+| Kroger developer portal > your app | Redirect URI | `https://us-central1-chuckwagon-ebbcc.cloudfunctions.net/krogerCallback` (the app must also have the Cart API) |
+| GitHub secret | `KROGER_CLIENT_ID`, `KROGER_CLIENT_SECRET` | Already set for the collector |
+| GitHub secret | `INSTACART_API_KEY` | Instacart Developer Platform API key |
+| GitHub variable (optional) | `INSTACART_API_URL` | `https://connect.dev.instacart.tools` while using a development key; leave unset for production |
+
+The **Deploy to Firebase** workflow writes these into `functions/.env` before deploying. When deploying from a Mac, create `functions/.env` with the same names.

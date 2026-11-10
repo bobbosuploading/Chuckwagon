@@ -231,3 +231,6 @@ async function rewardReceipt(db: Firestore, uid: string, day: string, duplicate:
     };
   });
 }
+
+// Send to cart: Kroger sign-in and Instacart shopping lists (see cart.ts).
+export { krogerConnectUrl, krogerCallback, krogerAccessToken, krogerDisconnect, instacartShoppingList } from "./cart";

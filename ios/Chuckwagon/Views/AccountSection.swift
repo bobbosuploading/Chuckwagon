@@ -6,6 +6,7 @@ import SwiftUI
 struct AccountSection: View {
     @State private var user = Auth.auth().currentUser
     @State private var premium = false
+    @State private var krogerConnected = false
     @State private var nonce = ""
     @State private var code = ""
     @State private var message: String?
@@ -71,6 +72,20 @@ struct AccountSection: View {
                 }
             }
 
+            if krogerConnected {
+                HStack {
+                    Text("Kroger account")
+                    Spacer()
+                    Button("Disconnect", role: .destructive) {
+                        Task {
+                            try? await SendToCart.disconnectKroger()
+                            await refresh()
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
             if let message {
                 Text(message).font(Theme.body(.footnote)).foregroundStyle(Theme.ink.opacity(0.7))
             }
@@ -88,6 +103,7 @@ struct AccountSection: View {
     private func refresh() async {
         user = Auth.auth().currentUser
         premium = (try? await Backend.isPremium()) ?? false
+        krogerConnected = (try? await Backend.isKrogerConnected()) ?? false
     }
 
     private func redeem() async {
