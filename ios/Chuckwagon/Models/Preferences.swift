@@ -15,6 +15,22 @@ final class Preferences {
     /// Weekly grocery budget in whole dollars; 0 means no budget.
     var weeklyBudget: Int { didSet { defaults.set(weeklyBudget, forKey: "weeklyBudget") } }
     var favoriteStoreIds: [String] { didSet { defaults.set(favoriteStoreIds, forKey: "favoriteStoreIds") } }
+    /// Shopper's ZIP and its approximate center (0 = unknown). Only the ZIP leaves the phone.
+    var zip: String { didSet { defaults.set(zip, forKey: "zip") } }
+    var latitude: Double { didSet { defaults.set(latitude, forKey: "latitude") } }
+    var longitude: Double { didSet { defaults.set(longitude, forKey: "longitude") } }
+
+    /// Stores to show: near the shopper's ZIP, or all of them if no ZIP is set yet.
+    func nearby(_ stores: [Store], miles: Double = 30) -> [Store] {
+        guard !zip.isEmpty else { return stores }
+        return stores.filter { store in
+            if store.coordinate != nil, latitude != 0 {
+                return store.distanceMiles(fromLat: latitude, lng: longitude) ?? .infinity <= miles
+            }
+            if let storeZip = store.zip ?? store.address?.zipCode { return storeZip == zip }
+            return true // older store records without a location
+        }
+    }
 
     static let defaultBudget = 60
 
@@ -30,5 +46,8 @@ final class Preferences {
         maxCookMinutes = defaults.object(forKey: "maxCookMinutes") as? Int ?? 45
         weeklyBudget = defaults.object(forKey: "weeklyBudget") as? Int ?? 0
         favoriteStoreIds = defaults.stringArray(forKey: "favoriteStoreIds") ?? []
+        zip = defaults.string(forKey: "zip") ?? ""
+        latitude = defaults.double(forKey: "latitude")
+        longitude = defaults.double(forKey: "longitude")
     }
 }

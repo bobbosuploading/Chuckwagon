@@ -10,6 +10,7 @@ import {
   PAGE_SIZE,
   SEARCH_TERMS,
 } from "./config";
+import { StockUp, withStockUp } from "./stockUp";
 
 /** One sale item, as stored in Firestore at deals/{storeId}_{productId}. */
 export interface Deal {
@@ -32,7 +33,9 @@ export interface Deal {
   promo?: string | null;
   /** When the sale ends (ISO date), if known. */
   validTo?: string;
-  source: "kroger-api" | "flipp";
+  /** Worth buying extra of (set when saved; see stockUp.ts). */
+  stockUp?: StockUp | null;
+  source: "kroger-api" | "flipp" | "walmart-api";
   fetchedAt: Timestamp;
 }
 
@@ -176,7 +179,7 @@ export async function collectKrogerDeals(
     if (!writer) continue;
 
     for (const deal of seen.values()) {
-      writer.set(db.doc(`deals/${storeId}_${deal.productId}`), deal);
+      writer.set(db.doc(`deals/${storeId}_${deal.productId}`), withStockUp(deal));
     }
     writer.set(db.doc(`priceBooks/${storeId}`), {
       storeId,
