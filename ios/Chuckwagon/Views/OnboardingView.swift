@@ -85,7 +85,7 @@ struct PreferencesForm: View {
                 } header: {
                     Text("Your stores")
                 } footer: {
-                    Text("H-E-B and more stores are coming.")
+                    Text("Walmart deals use walmart.com prices for your area, which can differ a little on the shelf.")
                 }
             }
 
