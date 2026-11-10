@@ -31,12 +31,14 @@ function toMarkdown(p: MealPlan): string {
     if (li.aisle !== aisle) out.push(`\n**${(aisle = li.aisle)}**`);
     const price = li.onSale
       ? ` · sale $${li.salePrice?.toFixed(2)} (reg $${li.regularPrice?.toFixed(2)})${li.lineSavings ? `, save $${li.lineSavings.toFixed(2)}` : ""}`
-      : " · regular price";
+      : li.lineTotal !== null
+        ? ` · regular $${li.lineTotal.toFixed(2)}${li.priceSource === "estimate" ? " (estimate)" : ""} as ${li.pricedAs}`
+        : " · regular price (no price found)";
     out.push(`- [ ] ${li.item}, ${li.quantityNote} (buy ${li.buyCount})${price}`);
   }
   out.push("");
   out.push(
-    `**Sale items: $${p.totals.saleItems.toFixed(2)} · You save: $${p.totals.savings.toFixed(2)}** (${p.totals.itemsNotPriced} items at regular price not included)`
+    `**Sale items: $${p.totals.saleItems.toFixed(2)} · Regular items: $${p.totals.regularItems.toFixed(2)} · Estimated total: $${p.totals.estimatedTotal.toFixed(2)} · You save: $${p.totals.savings.toFixed(2)}** (${p.totals.itemsNotPriced} items not priced)`
   );
   if (p.notes) out.push(`\n> ${p.notes}`);
   return out.join("\n");
