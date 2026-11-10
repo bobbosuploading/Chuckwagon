@@ -1,6 +1,7 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { Category } from "./config";
 import type { Deal } from "./collectKroger";
+import { withStockUp } from "./stockUp";
 
 /**
  * H-E-B has no public API. For testing we read the weekly ad as published on Flipp,
@@ -98,7 +99,7 @@ export async function collectHebDeals(zip: string, dryRun = false) {
   const deals: Deal[] = [];
   for (const { id } of flyer.items) {
     const { item } = await getJson<{ item: FlippItem }>(`${FLIPP}/items/${id}?locale=en-us`);
-    deals.push(toHebDeal(item, storeId, now));
+    deals.push(withStockUp(toHebDeal(item, storeId, now)));
     await new Promise((r) => setTimeout(r, 250)); // be polite
   }
 

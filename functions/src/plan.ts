@@ -10,6 +10,7 @@ import { Firestore } from "firebase-admin/firestore";
 import { z } from "zod";
 import type { Category } from "./config";
 import type { Deal } from "./collectKroger";
+import { StockUp, stockUpTip } from "./stockUp";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -131,6 +132,8 @@ export interface PricedListItem {
   /** Where to buy it. Non-sale items go to the store with the most items. */
   storeId: string;
   storeName: string;
+  /** Set when the sale price is worth buying extra of and the item keeps. */
+  stockUp: StockUp | null;
   checked: boolean;
 }
 
@@ -282,7 +285,7 @@ ${lines}`;
       itemsNotPriced++;
       return {
         ...li, dealId: null, onSale: false, salePrice: null, regularPrice: null, lineTotal: null, lineSavings: null,
-        storeId: mainStore, storeName: storeNames.get(mainStore)!, checked: false,
+        storeId: mainStore, storeName: storeNames.get(mainStore)!, stockUp: null, checked: false,
       };
     }
     // Weight-priced items have per-lb prices, so multiply by the estimated pounds instead of the package count.
@@ -303,6 +306,8 @@ ${lines}`;
       lineSavings,
       storeId: deal.storeId,
       storeName: storeNames.get(deal.storeId)!,
+      // Worked out here too, so plans get tips even for deals saved before tips existed.
+      stockUp: deal.stockUp ?? stockUpTip(deal),
       checked: false,
     };
   });
@@ -326,6 +331,13 @@ ${lines}`;
     if (extra.items <= 2 && extra.savings < 3) {
       notes += `${notes ? " " : ""}Tip: ${extra.storeName} only saves you ${extra.savings > 0 ? `$${extra.savings.toFixed(2)}` : "a little"} on ${extra.items} item${extra.items === 1 ? "" : "s"}. You could skip that stop and buy ${extra.items === 1 ? "it" : "them"} at ${stores[0].storeName}.`;
     }
+  }
+
+  const stockUps = groceryList.filter((li) => li.stockUp);
+  if (stockUps.length > 0) {
+    const names = stockUps.slice(0, 3).map((li) => li.item.toLowerCase());
+    const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+    notes += `${notes ? " " : ""}Stock-up pick${stockUps.length === 1 ? "" : "s"}: ${list} ${stockUps.length === 1 ? "is" : "are"} priced low enough to buy extra and put away. See the tip on the list for how to keep ${stockUps.length === 1 ? "it" : "them"}.`;
   }
 
   // Map short deal ids in ingredients back to Firestore ids.
