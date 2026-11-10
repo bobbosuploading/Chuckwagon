@@ -110,6 +110,7 @@ Rules:
 - Keep recipes to the time limit, written as short numbered-step instructions a busy parent can follow.
 - If a BUDGET is given, it comes first: the whole grocery list, sale and non-sale items together, must fit under it. To get there, lean on the cheapest proteins per serving (chicken thighs or leg quarters, whole chickens, ground meat, pork shoulder, eggs, beans), stretch meals with rice, pasta, potatoes and tortillas, reuse ingredients across meals, and buy only the packages the meals need. Make fewer meals only as a last resort, and say so in notes.
 - Give every grocery line an estimatedPrice, and when there is a BUDGET keep their sum under its target.
+- Don't state totals, targets or price estimates in notes; the app shows the real totals from store prices.
 - If the sale items can't support the requested number of meals, return fewer and explain in notes.
 - The grocery list must be COMPLETE: every ingredient from every meal that isn't under HAVE AT HOME, combined into one line per product (usually 12 to 25 lines). Group it by aisle.`;
 
