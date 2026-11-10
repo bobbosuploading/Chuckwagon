@@ -96,6 +96,29 @@ Setup: make a free account at apify.com, copy your API token (Settings > API & I
 save it as the repository secret `APIFY_TOKEN`. Then try **Actions > Collect H-E-B everyday prices >
 Run workflow** (dry run, 20 products, about 14 cents).
 
+## More areas: price regions
+
+Shoppers add their ZIP in the app (`registerArea`, at most 15 areas during the beta; later ones are waitlisted).
+The Kroger, H-E-B ad and ALDI/Dollar General ad collectors then cover the home ZIP plus every registered area,
+without collecting the same prices twice (`functions/src/regions.ts`):
+
+- **Kroger:** the stores near each area are grouped by chain and Kroger division. One store per group (within
+  `KROGER_SHARE_MILES`, 50 mi) is collected in full; the others get `dealsFrom` / `everydayFrom` pointing at it.
+  At most `KROGER_MAX_SOURCE_STORES` (8) stores are collected per run, about 1,100 of Kroger's 10,000 free daily
+  product calls. Settings are in `functions/src/config.ts`.
+- **H-E-B, ALDI, Dollar General ads:** Flipp hands every ZIP in a chain's ad region the same flyer, so each flyer is
+  read once and the other areas point at it. At most `AD_MAX_REGIONS` (6) different flyers per chain per run.
+- **H-E-B everyday prices** still come from the one monthly Apify run for the home ZIP (no extra Apify cost);
+  every other H-E-B area uses them.
+- **Walmart** still covers the home ZIP only.
+
+Every store that borrows has a `pricesNote` (e.g. "Prices from Kroger, Sugar Land (14 mi away)") that the app shows
+under the store and on meal plans, and everyday prices taken from the sharing store show as "nearby price".
+An area moves from `pending` to `ready` after the first collector run that covers it.
+
+To try other areas without touching the real list, run a collector from the Actions tab with **dry run** on and
+`area_zips` set, e.g. `78701,75201`.
+
 ## Send to cart
 
 On a meal plan's grocery list, **Send to cart** has one button per store (items already checked off are left out):

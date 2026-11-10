@@ -12,6 +12,15 @@ struct Store: Identifiable, Codable, Hashable {
     /// Some collectors (Walmart) store coordinates at the top level instead of in `geo`.
     var lat: Double?
     var lng: Double?
+    /// Set when this store shows a nearby store's deals (same chain and price region).
+    var dealsFrom: String?
+    /// Set when this store's everyday prices come from another store of the chain.
+    var everydayFrom: String?
+    /// Where this store's prices come from, e.g. "Prices from Kroger, Sugar Land (14 mi away)".
+    var pricesNote: String?
+
+    /// The store whose deals to load for this one.
+    var dealsStoreId: String? { dealsFrom ?? id }
 
     struct Geo: Codable, Hashable {
         var lat: Double
@@ -143,6 +152,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var items: Int
         var saleItems: Double
         var savings: Double
+        /// Set when this store uses a nearby store's prices.
+        var pricesNote: String?
     }
     /// Ids of grocery items the user has checked off (saved in Firestore as `checked`).
     var checked: [String]?
@@ -192,7 +203,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var storeName: String?
         /// Worth buying extra of. Older plans don't have it.
         var stockUp: StockUp?
-        /// For items not on sale: "store", "receipt", or "estimate" (another store's price stands in).
+        /// For items not on sale: "store", "receipt", "nearby" (same chain, the store this one
+        /// shares prices with), or "estimate" (another chain's price stands in).
         var priceSource: String?
         /// For items not on sale: the product that was priced.
         var pricedAs: String?

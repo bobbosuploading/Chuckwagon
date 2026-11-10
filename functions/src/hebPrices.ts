@@ -154,7 +154,7 @@ export async function collectHebPrices(token: string, zip: string, opts: { dryRu
     });
   });
   summary.saved = true;
-  const ad = await enrichHebDeals(db, zip);
+  const ad = await enrichHebDeals(db, storeId);
   summary.adDealsPriced = ad.enriched;
   await db.collection("runs").add({ type: "heb-prices", at: new Date(), ...summary });
   return { summary, items };
@@ -172,9 +172,12 @@ const MAX_PCT = 70;
  * products match, the lowest regular price above the sale price is used, so savings are
  * never overstated. Deals that already have a regular price are left alone.
  */
-export async function enrichHebDeals(db: Firestore, zip: string): Promise<{ checked: number; enriched: number }> {
-  const storeId = `heb-${zip}`;
-  const book = ((await db.doc(`priceBooks/${storeId}`).get()).get("items") as PriceBookItem[] | undefined) ?? [];
+export async function enrichHebDeals(
+  db: Firestore,
+  storeId: string,
+  bookId = storeId
+): Promise<{ checked: number; enriched: number }> {
+  const book = ((await db.doc(`priceBooks/${bookId}`).get()).get("items") as PriceBookItem[] | undefined) ?? [];
   const deals = await db.collection("deals").where("storeId", "==", storeId).get();
   if (book.length === 0) return { checked: deals.size, enriched: 0 };
   const bookWords = book.map((p) => ({ p, w: new Set(words(p.name)) }));
