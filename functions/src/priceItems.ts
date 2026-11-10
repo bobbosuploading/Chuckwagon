@@ -30,8 +30,9 @@ export interface ItemPrice {
   quantity: number;
   lineTotal: number;
   /** "store": this store's own prices. "receipt": a shopper's receipt from this store.
-   *  "estimate": no price for this store, so a nearby store's price stands in. */
-  source: "store" | "receipt" | "estimate";
+   *  "nearby": the same chain's price at the store this one shares prices with (regions.ts).
+   *  "estimate": no price for this chain, so a Kroger price stands in. */
+  source: "store" | "receipt" | "nearby" | "estimate";
 }
 
 const PickSchema = z.object({
@@ -65,8 +66,15 @@ export async function priceRegularItems(
   // Each store's own prices (collector + receipts). When a store has no match for an item
   // (no collector for that chain, or the item isn't in its book yet), a Kroger price stands
   // in as an estimate.
+  // A store in a price region also uses its source store's book (stores/{id}.everydayFrom, see
+  // regions.ts). Its own receipts come first, so a shopper's real prices win.
   const books = new Map<string, PriceBookItem[]>();
-  for (const id of new Set(items.map((i) => i.storeId))) books.set(id, await loadPriceBook(db, id));
+  for (const id of new Set(items.map((i) => i.storeId))) {
+    const own = await loadPriceBook(db, id);
+    const from = (await db.doc(`stores/${id}`).get()).get("everydayFrom") as string | undefined;
+    const shared = from && from !== id ? (await loadPriceBook(db, from)).map((p) => ({ ...p, shared: true })) : [];
+    books.set(id, [...own, ...shared]);
+  }
   const own = items.map((it) => shortlist(it.item, books.get(it.storeId) ?? []));
   let fallback: PriceBookItem[] = [];
   if (own.some((c, i) => c.length === 0 && !items[i].storeId.startsWith("kroger-"))) {
@@ -128,7 +136,11 @@ export async function priceRegularItems(
       perLb,
       quantity,
       lineTotal: round2(unitPrice * quantity),
-      source: opt.estimate ? "estimate" : p.source === "receipt" ? "receipt" : "store",
+      source: opt.estimate
+        ? "estimate"
+        : (p as PriceBookItem & { shared?: boolean }).shared
+          ? "nearby"
+          : p.source === "receipt" ? "receipt" : "store",
     };
   }
   return { prices, ...usage };

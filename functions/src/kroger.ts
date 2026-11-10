@@ -9,6 +9,8 @@ const USER_AGENT = "Chuckwagon/0.1 (grocery deal meal planner)";
 export interface KrogerStore {
   locationId: string;
   chain: string;
+  /** Kroger division; stores in one division share the weekly ad. */
+  divisionNumber?: string;
   name: string;
   address: { addressLine1?: string; city?: string; state?: string; zipCode?: string };
   geolocation?: { latitude: number; longitude: number };

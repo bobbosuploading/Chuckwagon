@@ -30,6 +30,20 @@ export const SEARCH_TERMS: Record<Category, string[]> = {
 export const KROGER_STORE_LIMIT = 3;
 /** Search radius from the home ZIP, in miles (Kroger API max is 100). */
 export const KROGER_RADIUS_MILES = 50;
+
+/**
+ * Price regions (see regions.ts). Stores of the same chain and Kroger division within
+ * KROGER_SHARE_MILES of a collected store reuse its deals and prices instead of being
+ * collected again. At most KROGER_MAX_SOURCE_STORES stores are collected in full per run
+ * (about 130 product calls each; Kroger allows 10,000 a day). Past the cap, a store borrows
+ * from the nearest collected store of its chain within KROGER_STRETCH_MILES.
+ */
+export const KROGER_SHARE_MILES = 50;
+export const KROGER_MAX_SOURCE_STORES = 8;
+export const KROGER_STRETCH_MILES = 120;
+
+/** Weekly ads (H-E-B, ALDI, Dollar General): at most this many different flyers loaded per chain per run. */
+export const AD_MAX_REGIONS = 6;
 /** Results per search page (Kroger max 50) and pages per term. */
 export const PAGE_SIZE = 50;
 export const PAGES_PER_TERM = 2;

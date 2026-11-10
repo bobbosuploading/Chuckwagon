@@ -1,6 +1,7 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
-import { Category } from "./config";
+import { AD_MAX_REGIONS, Category } from "./config";
 import type { Deal } from "./collectKroger";
+import { clearOwnDeals, markAreasReady, sharingFields } from "./regions";
 import { withStockUp } from "./stockUp";
 
 /**
@@ -82,45 +83,133 @@ export function toHebDeal(it: FlippItem, storeId: string, now: Timestamp): Deal 
   };
 }
 
-/** Load the H-E-B weekly ad that is valid today near `zip`. With dryRun, nothing is written. */
-export async function collectHebDeals(zip: string, dryRun = false) {
+/** The H-E-B weekly ad valid today for `zip`, or null if Flipp has none there. */
+async function currentHebFlyer(zip: string): Promise<FlippFlyer | null> {
   const flyers = await getJson<FlippFlyer[] | { flyers: FlippFlyer[] }>(`${FLIPP}/flyers?locale=en-us&postal_code=${zip}`);
   const list = Array.isArray(flyers) ? flyers : flyers.flyers;
   const nowMs = Date.now();
-  const heb = list
+  return list
     .filter((f) => f.merchant === "H-E-B")
     .filter((f) => Date.parse(f.valid_from) <= nowMs && nowMs <= Date.parse(f.valid_to))
-    .sort((a, b) => Date.parse(b.valid_from) - Date.parse(a.valid_from))[0];
-  if (!heb) throw new Error(`No current H-E-B weekly ad near ${zip}`);
+    .sort((a, b) => Date.parse(b.valid_from) - Date.parse(a.valid_from))[0] ?? null;
+}
 
-  const flyer = await getJson<{ items: { id: number }[] }>(`${FLIPP}/flyers/${heb.id}?locale=en-us`);
+export interface HebRegion {
+  flyerId: number;
+  /** The area whose store doc holds this flyer's deals. */
+  sourceZip: string;
+  /** Other areas that get the same flyer and show the source's deals. */
+  sharedWith: string[];
+  validFrom: string;
+  validTo: string;
+  deals: number;
+  removed: number;
+}
+
+/**
+ * Loads the H-E-B weekly ad for every area. H-E-B runs one ad per region and Flipp gives every
+ * ZIP in a region the same flyer, so each flyer is read once: the first area that gets it holds
+ * the deals (heb-{zip}), and other areas with that flyer point at it (dealsFrom).
+ * Everyday prices come from the one monthly Apify run (priceBooks/heb-{everydayZip}) for every area.
+ * With dryRun, nothing is written.
+ */
+export async function collectHebDeals(zips: string[], dryRun = false, everydayZip = zips[0]) {
+  const db = dryRun ? null : getFirestore();
   const now = Timestamp.now();
-  const storeId = `heb-${zip}`;
-  const deals: Deal[] = [];
-  for (const { id } of flyer.items) {
-    const { item } = await getJson<{ item: FlippItem }>(`${FLIPP}/items/${id}?locale=en-us`);
-    deals.push(withStockUp(toHebDeal(item, storeId, now)));
-    await new Promise((r) => setTimeout(r, 250)); // be polite
+  const regions = new Map<number, HebRegion>();
+  const dealsByFlyer = new Map<number, Deal[]>();
+  const noAd: string[] = [];
+  const overCap: string[] = [];
+  const everydayId = `heb-${everydayZip}`;
+  const everydayName =
+    ((await db?.doc(`priceBooks/${everydayId}`).get())?.get("storeName") as string | undefined) ?? `H-E-B near ${everydayZip}`;
+
+  for (const zip of zips) {
+    const flyer = await currentHebFlyer(zip).catch((err) => {
+      console.warn(`H-E-B flyers near ${zip}: ${(err as Error).message}`);
+      return null;
+    });
+    if (!flyer) {
+      noAd.push(zip);
+      continue;
+    }
+    const storeId = `heb-${zip}`;
+    const known = regions.get(flyer.id);
+    const everyday = zip === everydayZip ? null : everydayId;
+
+    if (known) {
+      known.sharedWith.push(zip);
+      if (!db) continue;
+      await db.doc(`stores/${storeId}`).set({
+        chain: "H-E-B",
+        name: "H-E-B",
+        address: { addressLine1: "Weekly ad", city: `near ${zip}`, zipCode: zip },
+        zip,
+        source: "flipp",
+        updatedAt: now,
+        ...sharingFields({
+          dealsFrom: `heb-${known.sourceZip}`,
+          everydayFrom: everyday,
+          note: `Same weekly ad as H-E-B near ${known.sourceZip}. Everyday prices from ${everydayName}.`,
+        }),
+      }, { merge: true });
+      await clearOwnDeals(db, storeId);
+      continue;
+    }
+    if (regions.size >= AD_MAX_REGIONS) {
+      overCap.push(zip);
+      continue;
+    }
+
+    const items = await getJson<{ items: { id: number }[] }>(`${FLIPP}/flyers/${flyer.id}?locale=en-us`);
+    const deals: Deal[] = [];
+    for (const { id } of items.items) {
+      const { item } = await getJson<{ item: FlippItem }>(`${FLIPP}/items/${id}?locale=en-us`);
+      deals.push(withStockUp(toHebDeal(item, storeId, now)));
+      await new Promise((r) => setTimeout(r, 250)); // be polite
+    }
+    const region: HebRegion = {
+      flyerId: flyer.id, sourceZip: zip, sharedWith: [], validFrom: flyer.valid_from, validTo: flyer.valid_to,
+      deals: deals.length, removed: 0,
+    };
+    regions.set(flyer.id, region);
+    dealsByFlyer.set(flyer.id, deals);
+    if (!db) continue;
+
+    const writer = db.bulkWriter();
+    writer.set(db.doc(`stores/${storeId}`), {
+      chain: "H-E-B",
+      name: "H-E-B",
+      address: { addressLine1: "Weekly ad", city: `near ${zip}`, zipCode: zip },
+      zip,
+      source: "flipp",
+      updatedAt: now,
+      ...sharingFields({
+        dealsFrom: null,
+        everydayFrom: everyday,
+        note: everyday ? `Everyday prices from ${everydayName}.` : null,
+      }),
+    }, { merge: true });
+    for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), d);
+    await writer.flush();
+    const stale = await db.collection("deals").where("storeId", "==", storeId).where("fetchedAt", "<", now).get();
+    stale.forEach((d) => writer.delete(d.ref));
+    region.removed = stale.size;
+    await writer.close();
   }
 
-  const summary = { flyerId: heb.id, validFrom: heb.valid_from, validTo: heb.valid_to, deals: deals.length, removed: 0 };
-  if (dryRun) return { summary, deals };
-
-  const db = getFirestore();
-  const writer = db.bulkWriter();
-  writer.set(db.doc(`stores/${storeId}`), {
-    chain: "H-E-B",
-    name: "H-E-B",
-    address: { addressLine1: "Weekly ad", city: `near ${zip}`, zipCode: zip },
-    source: "flipp",
-    updatedAt: now,
-  }, { merge: true });
-  for (const d of deals) writer.set(db.doc(`deals/${storeId}_${d.productId}`), d);
-  await writer.flush();
-  const stale = await db.collection("deals").where("storeId", "==", storeId).where("fetchedAt", "<", now).get();
-  stale.forEach((d) => writer.delete(d.ref));
-  summary.removed = stale.size;
-  await writer.close();
-  await db.collection("runs").add({ type: "heb", zip, at: now, ...summary });
-  return { summary, deals };
+  const summary = {
+    areas: zips,
+    regions: [...regions.values()],
+    deals: [...regions.values()].reduce((t, r) => t + r.deals, 0),
+    noAd,
+    overCap,
+  };
+  if (db) {
+    await markAreasReady(db, [...regions.values()].flatMap((r) => [r.sourceZip, ...r.sharedWith]));
+    await db.collection("runs").add({ type: "heb", zip: zips[0], at: now, ...summary });
+  }
+  // Deals for the first (home) region, for the dry-run printout.
+  const first = [...regions.values()][0];
+  return { summary, deals: first ? dealsByFlyer.get(first.flyerId) ?? [] : [] };
 }

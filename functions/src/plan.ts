@@ -139,7 +139,7 @@ export interface PricedListItem {
   forMeals: string[];
   /** For items not on sale: where the price came from ("store", "receipt", or "estimate"
    *  when we have no prices for this store and a nearby store's price stands in). */
-  priceSource?: "store" | "receipt" | "estimate" | null;
+  priceSource?: "store" | "receipt" | "nearby" | "estimate" | null;
   /** For items not on sale: the product that was priced, e.g. "Kroger Garlic | 3 ct". */
   pricedAs?: string | null;
   /** Where to buy it. Non-sale items go to the store with the most items. */
@@ -158,6 +158,8 @@ export interface StoreTotal {
   savings: number;
   /** Everything priced at this store, sale and regular. */
   total: number;
+  /** Set when this store uses a nearby store's prices, e.g. "Prices from Kroger, Sugar Land (14 mi away)". */
+  pricesNote?: string;
 }
 
 export interface MealPlan {
@@ -246,27 +248,43 @@ export async function planMeals(
   const model = modelOverride || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
   const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
   const storeNames = new Map<string, string>();
+  // Stores in a price region share one store's deals (see regions.ts): dealsFrom says whose.
+  const dealSource = new Map<string, string>();
+  const pricesNotes = new Map<string, string>();
   for (const id of storeIds) {
     const doc = await db.doc(`stores/${id}`).get();
     if (!doc.exists) throw new Error(`Unknown store ${id}`);
     storeNames.set(id, doc.get("name"));
+    dealSource.set(id, (doc.get("dealsFrom") as string | undefined) ?? id);
+    const note = doc.get("pricesNote") as string | undefined;
+    if (note) pricesNotes.set(id, note);
   }
   const multi = storeIds.length > 1;
   const budget =
     req.budget && req.budget >= BUDGET_RANGE.min && req.budget <= BUDGET_RANGE.max ? round2(req.budget) : undefined;
 
   // Pick the best deals (highest % off) per category, sharing the budget across stores.
-  const deals = new Map<string, Deal>(); // short id -> deal
+  const deals = new Map<string, Deal>(); // short id -> deal (storeId = the shopper's store)
+  const dealDocIds = new Map<string, string>(); // short id -> Firestore deals/{id}
+  const loadedSources = new Set<string>();
   for (const id of storeIds) {
+    // Two chosen stores in the same region have the same deals; load them once.
+    const source = dealSource.get(id)!;
+    if (loadedSources.has(source)) continue;
+    loadedSources.add(source);
     for (const [category, limit] of Object.entries(DEALS_PER_CATEGORY)) {
       const snap = await db
         .collection("deals")
-        .where("storeId", "==", id)
+        .where("storeId", "==", source)
         .where("category", "==", category)
         .orderBy("pctOff", "desc")
         .limit(Math.ceil(limit! / storeIds.length))
         .get();
-      snap.forEach((doc) => deals.set(`d${deals.size + 1}`, doc.data() as Deal));
+      snap.forEach((doc) => {
+        const key = `d${deals.size + 1}`;
+        deals.set(key, { ...(doc.data() as Deal), storeId: id });
+        dealDocIds.set(key, doc.id);
+      });
     }
   }
   if (deals.size === 0) throw new Error(`No current deals for ${storeIds.join(", ")}`);
@@ -383,7 +401,7 @@ ${lines}`;
       if (lineSavings !== null) savings += lineSavings;
       return {
         ...li,
-        dealId: `${deal.storeId}_${deal.productId}`,
+        dealId: dealDocIds.get(li.dealId!) ?? `${deal.storeId}_${deal.productId}`,
         onSale: true,
         salePrice: deal.salePrice,
         regularPrice: deal.regularPrice,
@@ -466,6 +484,7 @@ ${lines}`;
         saleItems: round2(items.reduce((t, li) => t + (li.onSale ? li.lineTotal ?? 0 : 0), 0)),
         savings: round2(items.reduce((t, li) => t + (li.lineSavings ?? 0), 0)),
         total: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
+        ...(pricesNotes.has(id) ? { pricesNote: pricesNotes.get(id) } : {}),
       };
     })
     .filter((s) => s.items > 0)
@@ -475,6 +494,11 @@ ${lines}`;
     if (extra.items <= 2 && extra.savings < 3) {
       notes += `${notes ? " " : ""}Tip: ${extra.storeName} only saves you ${extra.savings > 0 ? `$${extra.savings.toFixed(2)}` : "a little"} on ${extra.items} item${extra.items === 1 ? "" : "s"}. You could skip that stop and buy ${extra.items === 1 ? "it" : "them"} at ${stores[0].storeName}.`;
     }
+  }
+
+  for (const s of stores) {
+    const note = pricesNotes.get(s.storeId);
+    if (note) notes += `${notes ? " " : ""}${s.storeName}: ${note.replace(/\.$/, "")}. Chains price by region, so these usually match your store.`;
   }
 
   const stockUps = groceryList.filter((li) => li.stockUp);
@@ -489,7 +513,7 @@ ${lines}`;
     ...m,
     ingredients: m.ingredients.map((ing) => {
       const deal = ing.dealId ? deals.get(ing.dealId) : undefined;
-      return { ...ing, dealId: deal ? `${deal.storeId}_${deal.productId}` : null };
+      return { ...ing, dealId: deal ? dealDocIds.get(ing.dealId!) ?? `${deal.storeId}_${deal.productId}` : null };
     }),
   }));
 

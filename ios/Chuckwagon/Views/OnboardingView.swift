@@ -80,6 +80,9 @@ struct PreferencesForm: View {
                                 VStack(alignment: .leading) {
                                     Text(store.name).foregroundStyle(.primary)
                                     Text(store.cityLine).font(.caption).foregroundStyle(.secondary)
+                                    if let note = store.pricesNote {
+                                        Text(note).font(.caption2).foregroundStyle(.secondary)
+                                    }
                                 }
                                 Spacer()
                                 if prefs.favoriteStoreIds.contains(id) {
@@ -91,7 +94,7 @@ struct PreferencesForm: View {
                 } header: {
                     Text("Your stores")
                 } footer: {
-                    Text("Stores within about 30 miles of your ZIP. Walmart prices come from walmart.com for your area and can differ a little on the shelf.")
+                    Text("Stores within about 30 miles of your ZIP. Chains price by region, so some stores show prices from a nearby store of the same chain; it says so under the store. Walmart prices come from walmart.com for your area and can differ a little on the shelf.")
                 }
             }
 

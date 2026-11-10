@@ -67,7 +67,7 @@ struct AreaSection: View {
         switch status {
         case "ready": message = nil
         case "waitlist": message = "Chuckwagon isn't in your area yet during testing. We've added you to the list."
-        default: message = "Thanks! We're gathering deals near \(zip). Check back in a few minutes."
+        default: message = "Thanks! Deals near \(zip) arrive with our next morning update (Monday, Wednesday or Friday)."
         }
     }
 }
