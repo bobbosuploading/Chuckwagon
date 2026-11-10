@@ -136,6 +136,18 @@ struct MealPlan: Codable, Identifiable, Hashable {
     var stores: [StoreTotal]?
     /// Only when the shopper set a budget.
     var budget: Budget?
+    /// Only when extra meal ideas were asked for: every idea, and which ones are picked.
+    /// `meals` and the grocery list cover just the picked ones.
+    var options: Options?
+
+    struct Options: Codable, Hashable {
+        /// Every meal idea, the planner's main picks first.
+        var meals: [Meal]
+        /// Names of the picked meals.
+        var chosen: [String]
+        /// How many meals the shopper asked for.
+        var mealCount: Int
+    }
 
     struct Budget: Codable, Hashable {
         var amount: Double
