@@ -13,28 +13,23 @@ packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "11.0.0"
-targets:
-  Chuckwagon:
+# Settings shared by the real app and the dev app.
+targetTemplates:
+  ChuckwagonApp:
     type: application
     platform: iOS
-    sources:
-      - Chuckwagon
     entitlements:
       path: Chuckwagon/Chuckwagon.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Chuckwagon uses your location once to find your ZIP code and the stores near you."
         INFOPLIST_KEY_NSCameraUsageDescription: "Chuckwagon uses the camera to read your grocery receipts so meal plans show real store prices."
-    scheme: {}
     dependencies:
       - package: Firebase
         product: FirebaseAuth
@@ -42,3 +37,34 @@ targets:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseFunctions
+
+targets:
+  # The real app: TestFlight and the App Store. Archive this one.
+  Chuckwagon:
+    templates: [ChuckwagonApp]
+    sources:
+      - Chuckwagon
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon
+        INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme: {}
+
+  # Dev app: run from Xcode straight onto the iPhone. Its own bundle ID, name ("Chuckwagon Dev")
+  # and red DEV icon, so it installs next to the TestFlight app instead of replacing it.
+  # Same code, same Firebase project. Needs ios/Dev/GoogleService-Info.plist (see ios/README.md).
+  ChuckwagonDev:
+    templates: [ChuckwagonApp]
+    sources:
+      - path: Chuckwagon
+        excludes:
+          - GoogleService-Info.plist
+      - Dev
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon.dev
+        INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon Dev
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEV_BUILD
+    scheme: {}
