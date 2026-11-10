@@ -38,6 +38,9 @@ struct ReceiptScanView: View {
                 if let error {
                     Section { Text(error).foregroundStyle(Color.chuckRed) }
                 }
+                if let reward = result?.reward {
+                    Section { rewardView(reward) }
+                }
                 if let result {
                     Section("Learned \(result.items.count) prices") {
                         ForEach(result.items, id: \.self) { item in
@@ -84,6 +87,31 @@ struct ReceiptScanView: View {
             result = try await Backend.scanReceipt(storeId: storeId, image: image)
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    @ViewBuilder
+    private func rewardView(_ reward: Backend.ReceiptScan.Reward) -> some View {
+        if reward.earned {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(reward.earnedChefPick == true ? "You earned a free Chef's pick!" : "Thanks! +1 meal plan today",
+                      systemImage: reward.earnedChefPick == true ? "star.fill" : "gift.fill")
+                    .font(Theme.body(.headline, weight: .bold))
+                    .foregroundStyle(Theme.red)
+                if let credits = reward.chefPickCredits, credits > 0 {
+                    Text("Free Chef's picks: \(credits). Turn on Chef's pick when you plan to use one.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let left = reward.receiptsToNextChefPick, reward.earnedChefPick != true {
+                    Text("\(left) more receipt\(left == 1 ? "" : "s") until a free Chef's pick.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Text(reward.reason == "already-scanned"
+                 ? "This receipt was already scanned, so no reward this time. The prices still help!"
+                 : "We couldn't read enough prices for a reward. Try a flatter, brighter photo.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

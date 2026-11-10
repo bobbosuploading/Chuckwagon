@@ -18,6 +18,8 @@ const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 /** Spending guards. Everyday plans cost about half a cent; premium about 17 cents. */
 const LIMITS = {
   freePerDay: 3, // everyday plans per user per day
+  bonusPerDay: 3, // extra everyday plans a day earned by scanning receipts (one per receipt)
+  receiptsPerChefPick: 3, // every 3rd new receipt earns one free Chef's pick
   premiumPerMonth: 10, // premium (Opus) plans per subscriber per month, about $1.70
   allUsersPerDay: 300, // kill switch: total plans per day across everyone
 };
@@ -39,15 +41,24 @@ async function reservePlan(db: Firestore, uid: string, premium: boolean): Promis
   const month = db.collection("usage").doc(`${uid}_${day.slice(0, 7)}`);
   await db.runTransaction(async (tx) => {
     const [user, m, e, mo] = await Promise.all([tx.get(userRef), tx.get(mine), tx.get(everyone), tx.get(month)]);
-    if (premium && user.get("premium") !== true) {
-      throw new HttpsError("permission-denied", "Chef's pick is a premium feature. It's coming soon!");
+    // Non-premium shoppers can use a free Chef's pick earned by scanning receipts.
+    const credits = (user.get("chefPickCredits") as number | undefined) ?? 0;
+    const useCredit = premium && user.get("premium") !== true && credits > 0;
+    if (premium && user.get("premium") !== true && !useCredit) {
+      throw new HttpsError(
+        "permission-denied",
+        `Chef's pick is a premium feature. Scan ${LIMITS.receiptsPerChefPick} receipts to earn a free one!`
+      );
     }
-    if (premium && ((mo.get("premium") as number | undefined) ?? 0) >= LIMITS.premiumPerMonth) {
+    if (premium && !useCredit && ((mo.get("premium") as number | undefined) ?? 0) >= LIMITS.premiumPerMonth) {
       throw new HttpsError("resource-exhausted", `You've used all ${LIMITS.premiumPerMonth} Chef's picks this month. Everyday plans still work.`);
     }
-    if (!premium && ((m.get("free") as number | undefined) ?? 0) >= LIMITS.freePerDay) {
-      throw new HttpsError("resource-exhausted", `You've made ${LIMITS.freePerDay} plans today. Your saved plans are under My plans, and you can make more tomorrow.`);
+    const bonus = Math.min((m.get("bonus") as number | undefined) ?? 0, LIMITS.bonusPerDay);
+    const allowed = LIMITS.freePerDay + bonus;
+    if (!premium && ((m.get("free") as number | undefined) ?? 0) >= allowed) {
+      throw new HttpsError("resource-exhausted", `You've made ${allowed} plans today. Scan a receipt for another one, or come back tomorrow. Your saved plans are under My plans.`);
     }
+    if (useCredit) tx.set(userRef, { chefPickCredits: FieldValue.increment(-1) }, { merge: true });
     if (((e.get("total") as number | undefined) ?? 0) >= LIMITS.allUsersPerDay) {
       throw new HttpsError("resource-exhausted", "Chuckwagon is extra busy today. Please try again tomorrow.");
     }
@@ -184,10 +195,39 @@ export const scanReceiptPhoto = onCall(
     try {
       const result = await scanReceipt(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, storeId, imageBase64, type);
       logger.info("Receipt scanned", { uid, storeId, items: result.items.length, receiptId: result.receiptId });
-      return result;
+      return { ...result, reward: await rewardReceipt(db, uid, day, result.duplicate, result.items.length) };
     } catch (err) {
       logger.warn("Receipt scan failed", err);
       throw new HttpsError("internal", (err as Error).message);
     }
   }
 );
+
+/**
+ * Thanks shoppers for scanning: each new receipt (3+ prices, not scanned before) adds one
+ * everyday plan for today (up to LIMITS.bonusPerDay), and every 3rd earns a free Chef's pick.
+ */
+async function rewardReceipt(db: Firestore, uid: string, day: string, duplicate: boolean, prices: number) {
+  const userRef = db.collection("users").doc(uid);
+  const mine = db.collection("usage").doc(`${uid}_${day}`);
+  if (duplicate || prices < 3) {
+    return { earned: false, reason: duplicate ? "already-scanned" : "too-few-prices", extraPlansToday: 0, chefPickCredits: null, receiptsToNextChefPick: null };
+  }
+  return db.runTransaction(async (tx) => {
+    const [user, m] = await Promise.all([tx.get(userRef), tx.get(mine)]);
+    const count = ((user.get("receiptCount") as number | undefined) ?? 0) + 1;
+    const earnsPick = count % LIMITS.receiptsPerChefPick === 0;
+    const credits = ((user.get("chefPickCredits") as number | undefined) ?? 0) + (earnsPick ? 1 : 0);
+    const bonus = Math.min(((m.get("bonus") as number | undefined) ?? 0) + 1, LIMITS.bonusPerDay);
+    tx.set(userRef, { receiptCount: count, chefPickCredits: credits }, { merge: true });
+    tx.set(mine, { uid, day, bonus }, { merge: true });
+    return {
+      earned: true,
+      reason: null,
+      extraPlansToday: bonus,
+      chefPickCredits: credits,
+      earnedChefPick: earnsPick,
+      receiptsToNextChefPick: LIMITS.receiptsPerChefPick - (count % LIMITS.receiptsPerChefPick),
+    };
+  });
+}
