@@ -50,3 +50,17 @@ if items:
         if k in items[0]: print("  ", k, Counter(i.get(k) for i in items).most_common(25))
 PY
 done
+echo "== H-E-B item detail =="
+python3 - <<'PY'
+import json
+d=json.load(open("fi.json")) if False else None
+PY
+curl -s -m 30 -A "$UA" "https://backflipp.wishabi.com/flipp/flyers/$FID?locale=en-us" -o fl.json
+for IID in $(python3 -c "import json; print(' '.join(str(i['id']) for i in json.load(open('fl.json'))['items'][:3]))"); do
+  curl -s -m 30 -A "$UA" "https://backflipp.wishabi.com/flipp/items/$IID?locale=en-us" -o it.json -w "item $IID http=%{http_code}\n"
+  python3 -c "import json; d=json.load(open('it.json')); print(json.dumps(d)[:1500])" 2>&1
+done
+python3 -c "
+import json; d=json.load(open('fl.json'))
+for i in d['items']: print('  ', repr(i.get('price')), '|', repr(i.get('discount')), '|', i.get('name'))
+"
