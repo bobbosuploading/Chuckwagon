@@ -10,6 +10,8 @@ Build 3 (0.1.0)
 ========================================
 [App Check is only in this build if PR #10 is merged before the build is made.
 It works behind the scenes, so there is nothing for testers to try.]
+[Dev app: the ChuckwagonDev scheme installs "Chuckwagon Dev" next to the
+TestFlight app for testing from Xcode. Not part of the TestFlight build.]
 
 What's new since the first build:
 
