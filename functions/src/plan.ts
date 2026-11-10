@@ -315,7 +315,7 @@ ${lines}`;
     const listedDealIds = new Set(listed.map((li) => li.dealId).filter(Boolean));
     const listedNames = new Set(listed.map((li) => norm(li.item)));
     // Basic spices are assumed, so "1 tsp chili powder" shouldn't add a $1.25 jar to a tight budget.
-    const BASIC_SPICES = "basic spices, spices, chili powder, garlic powder, onion powder, paprika, cumin, oregano, dried herbs, seasoning";
+    const BASIC_SPICES = "water, ice, basic spices, spices, chili powder, garlic powder, onion powder, paprika, cumin, oregano, dried herbs, seasoning";
     const atHome = `${req.haveAtHome || "salt, pepper, cooking oil, oil"}, ${BASIC_SPICES}`
       .split(",")
       .map(norm)
