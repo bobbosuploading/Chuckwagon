@@ -7,7 +7,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import type { Firestore } from "firebase-admin/firestore";
+import { FieldPath, type Firestore } from "firebase-admin/firestore";
 import { z } from "zod";
 import { loadPriceBook, PriceBookItem, shortlist } from "./priceBook";
 
@@ -62,24 +62,26 @@ export async function priceRegularItems(
   const none = { prices: items.map(() => null), inputTokens: 0, outputTokens: 0 };
   if (items.length === 0) return none;
 
-  // Each store's own prices (collector + receipts). For stores with no collector prices
-  // (H-E-B, Aldi, Dollar General today), a Kroger price book stands in as an estimate.
-  const books = new Map<string, { items: PriceBookItem[]; hasCollector: boolean }>();
-  for (const id of new Set(items.map((i) => i.storeId))) {
-    const all = await loadPriceBook(db, id);
-    books.set(id, { items: all, hasCollector: all.some((p) => p.source !== "receipt") });
-  }
+  // Each store's own prices (collector + receipts). When a store has no match for an item
+  // (no collector for that chain, or the item isn't in its book yet), a Kroger price stands
+  // in as an estimate.
+  const books = new Map<string, PriceBookItem[]>();
+  for (const id of new Set(items.map((i) => i.storeId))) books.set(id, await loadPriceBook(db, id));
+  const own = items.map((it) => shortlist(it.item, books.get(it.storeId) ?? []));
   let fallback: PriceBookItem[] = [];
-  if ([...books.values()].some((b) => !b.hasCollector)) {
-    const any = await db.collection("priceBooks").limit(1).get();
-    fallback = (any.docs[0]?.get("items") as PriceBookItem[] | undefined) ?? [];
+  if (own.some((c, i) => c.length === 0 && !items[i].storeId.startsWith("kroger-"))) {
+    const kroger = await db
+      .collection("priceBooks")
+      .where(FieldPath.documentId(), ">=", "kroger-")
+      .where(FieldPath.documentId(), "<", "kroger.")
+      .limit(1)
+      .get();
+    fallback = (kroger.docs[0]?.get("items") as PriceBookItem[] | undefined) ?? [];
   }
 
   const letters = "abcdefgh";
-  const options: { candidates: PriceBookItem[]; estimate: boolean }[] = items.map((it) => {
-    const book = books.get(it.storeId)!;
-    const own = shortlist(it.item, book.items);
-    if (own.length || book.hasCollector) return { candidates: own, estimate: false };
+  const options: { candidates: PriceBookItem[]; estimate: boolean }[] = items.map((it, i) => {
+    if (own[i].length || it.storeId.startsWith("kroger-")) return { candidates: own[i], estimate: false };
     return { candidates: shortlist(it.item, fallback), estimate: true };
   });
   if (options.every((o) => o.candidates.length === 0)) return none;

@@ -3,6 +3,7 @@
  * everyday prices go into receiptPrices/{storeId}. This is how we learn shelf prices
  * for stores with no API (H-E-B, ALDI, Dollar General), using data shoppers give us.
  */
+import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { Firestore, Timestamp } from "firebase-admin/firestore";
@@ -37,6 +38,8 @@ weight and a per-lb price, fill pounds. If the image isn't a receipt, set isRece
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export interface ScanResult {
+  /** True when this receipt was already scanned (no reward). */
+  duplicate: boolean;
   receiptId: string;
   storeName: string | null;
   date: string | null;
@@ -116,6 +119,12 @@ export async function scanReceipt(
     });
   });
 
+  // The same receipt scanned twice (by anyone) earns no second reward.
+  const fingerprint = createHash("sha256")
+    .update([storeId, seenAt, ...items.map((p) => `${p.name}:${p.price}`).sort()].join("|"))
+    .digest("hex");
+  const dupe = await db.collection("receipts").where("fingerprint", "==", fingerprint).limit(1).get();
+
   // Keep the parsed receipt (not the photo) so prices can be traced and bad scans removed.
   const saved = await db.collection("receipts").add({
     uid,
@@ -123,10 +132,13 @@ export async function scanReceipt(
     storeName: r.storeName,
     date: seenAt,
     lines: r.items,
+    fingerprint,
+    duplicate: !dupe.empty,
     at: Timestamp.now(),
   });
 
   return {
+    duplicate: !dupe.empty,
     receiptId: saved.id,
     storeName: r.storeName,
     date: seenAt,

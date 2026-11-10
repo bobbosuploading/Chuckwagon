@@ -115,8 +115,18 @@ enum Backend {
             var price: Double
             var soldBy: String
         }
+        /// What the shopper earned for scanning.
+        struct Reward: Decodable {
+            var earned: Bool
+            var reason: String?
+            var extraPlansToday: Int
+            var chefPickCredits: Int?
+            var earnedChefPick: Bool?
+            var receiptsToNextChefPick: Int?
+        }
         var storeName: String?
         var items: [Item]
+        var reward: Reward?
     }
 
     /// Sends a receipt photo to the backend, which saves the store's everyday prices.
