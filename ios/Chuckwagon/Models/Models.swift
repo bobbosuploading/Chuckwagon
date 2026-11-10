@@ -9,14 +9,23 @@ struct Store: Identifiable, Codable, Hashable {
     var address: Address?
     var zip: String?
     var geo: Geo?
+    /// Some collectors (Walmart) store coordinates at the top level instead of in `geo`.
+    var lat: Double?
+    var lng: Double?
 
     struct Geo: Codable, Hashable {
         var lat: Double
         var lng: Double
     }
 
+    var coordinate: Geo? {
+        if let geo { return geo }
+        if let lat, let lng { return Geo(lat: lat, lng: lng) }
+        return nil
+    }
+
     func distanceMiles(fromLat lat: Double, lng: Double) -> Double? {
-        guard let geo else { return nil }
+        guard let geo = coordinate else { return nil }
         let r = 3958.8, toRad = Double.pi / 180
         let dLat = (geo.lat - lat) * toRad, dLng = (geo.lng - lng) * toRad
         let a = sin(dLat / 2) * sin(dLat / 2) + cos(lat * toRad) * cos(geo.lat * toRad) * sin(dLng / 2) * sin(dLng / 2)
@@ -139,12 +148,16 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var forMeals: [String]
         /// Which store to buy it at (multi-store plans). Older plans don't have it.
         var storeName: String?
+        /// For items not on sale: "store", "receipt", or "estimate" (another store's price stands in).
+        var priceSource: String?
+        /// For items not on sale: the product that was priced.
+        var pricedAs: String?
         /// Set on the phone only; the backend never sends it.
         var checked = false
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName
+            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs
         }
     }
 
@@ -152,6 +165,10 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var saleItems: Double
         var savings: Double
         var itemsNotPriced: Int
+        /// Items not on sale at everyday prices. Older plans don't have it.
+        var regularItems: Double?
+        /// Sale + regular items (unpriced items not included). Older plans don't have it.
+        var estimatedTotal: Double?
     }
 }
 

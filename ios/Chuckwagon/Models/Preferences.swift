@@ -22,7 +22,7 @@ final class Preferences {
     func nearby(_ stores: [Store], miles: Double = 30) -> [Store] {
         guard !zip.isEmpty else { return stores }
         return stores.filter { store in
-            if store.geo != nil, latitude != 0 {
+            if store.coordinate != nil, latitude != 0 {
                 return store.distanceMiles(fromLat: latitude, lng: longitude) ?? .infinity <= miles
             }
             if let storeZip = store.zip ?? store.address?.zipCode { return storeZip == zip }

@@ -91,7 +91,7 @@ struct PreferencesForm: View {
                 } header: {
                     Text("Your stores")
                 } footer: {
-                    Text("Stores within about 30 miles of your ZIP.")
+                    Text("Stores within about 30 miles of your ZIP. Walmart prices come from walmart.com for your area and can differ a little on the shelf.")
                 }
             }
 

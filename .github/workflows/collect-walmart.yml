@@ -1,0 +1,57 @@
+name: Collect Walmart prices
+
+# Walmart has no weekly ad, so this prices a few hundred common items for the home ZIP
+# and saves price drops as deals. Runs with the Kroger collector, Mon/Wed/Fri mornings.
+# Does nothing until the WALMART_CONSUMER_ID secret exists.
+on:
+  schedule:
+    - cron: "30 12 * * 1,3,5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show the prices, don't save them"
+        type: boolean
+        default: true
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: functions
+    env:
+      HAS_KEYS: ${{ secrets.WALMART_CONSUMER_ID != '' }}
+    steps:
+      - name: Waiting for Walmart API keys
+        if: env.HAS_KEYS != 'true'
+        working-directory: .
+        run: echo "WALMART_CONSUMER_ID is not set yet, skipping."
+      - uses: actions/checkout@v4
+        if: env.HAS_KEYS == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEYS == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+        if: env.HAS_KEYS == 'true'
+      - run: npm run build
+        if: env.HAS_KEYS == 'true'
+      - name: Write Firebase credentials
+        if: env.HAS_KEYS == 'true'
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Collect
+        if: env.HAS_KEYS == 'true'
+        run: node lib/cli-walmart.js
+        env:
+          WALMART_CONSUMER_ID: ${{ secrets.WALMART_CONSUMER_ID }}
+          WALMART_PRIVATE_KEY: ${{ secrets.WALMART_PRIVATE_KEY }}
+          WALMART_KEY_VERSION: ${{ secrets.WALMART_KEY_VERSION }}
+          WALMART_PUBLISHER_ID: ${{ secrets.WALMART_PUBLISHER_ID }}
+          HOME_ZIP: "77437"
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
