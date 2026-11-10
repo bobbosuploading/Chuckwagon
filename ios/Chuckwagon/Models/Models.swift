@@ -69,6 +69,15 @@ struct MealPlan: Codable, Identifiable, Hashable {
     var notes: String
     var totals: Totals
     var createdAt: String?
+    var stores: [StoreTotal]?
+
+    struct StoreTotal: Codable, Hashable {
+        var storeId: String
+        var storeName: String
+        var items: Int
+        var saleItems: Double
+        var savings: Double
+    }
     /// Ids of grocery items the user has checked off (saved in Firestore as `checked`).
     var checked: [String]?
 
@@ -113,12 +122,14 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var lineTotal: Double?
         var lineSavings: Double?
         var forMeals: [String]
+        /// Which store to buy it at (multi-store plans). Older plans don't have it.
+        var storeName: String?
         /// Set on the phone only; the backend never sends it.
         var checked = false
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals
+            case regularPrice, lineTotal, lineSavings, forMeals, storeName
         }
     }
 

@@ -7,11 +7,38 @@ struct PlanView: View {
 
     enum Tab: String, CaseIterable { case list = "Grocery list", meals = "Meals" }
 
+    /// Sections of the list: by aisle, or by store then aisle when the plan uses several stores.
     private var aisles: [(String, [Int])] {
         let order = ["Produce", "Meat", "Seafood", "Dairy", "Bakery", "Frozen", "Pantry", "Other"]
-        let grouped = Dictionary(grouping: plan.groceryList.indices) { plan.groceryList[$0].aisle }
-        return grouped.sorted { (order.firstIndex(of: $0.key) ?? 99) < (order.firstIndex(of: $1.key) ?? 99) }
-            .map { ($0.key, $0.value) }
+        let storeOrder = (plan.stores ?? []).map(\.storeName)
+        let multi = storeOrder.count > 1
+        func key(_ i: Int) -> String {
+            let li = plan.groceryList[i]
+            return multi ? "\(li.storeName ?? "Any store") · \(li.aisle)" : li.aisle
+        }
+        func rank(_ k: String) -> Int {
+            let parts = k.components(separatedBy: " · ")
+            let aisle = parts.last ?? k
+            let store = multi ? (storeOrder.firstIndex(of: parts.first ?? "") ?? 9) : 0
+            return store * 100 + (order.firstIndex(of: aisle) ?? 99)
+        }
+        let grouped = Dictionary(grouping: plan.groceryList.indices, by: key)
+        return grouped.sorted { rank($0.key) < rank($1.key) }.map { ($0.key, $0.value) }
+    }
+
+    @ViewBuilder private var storeSummary: some View {
+        if let stores = plan.stores, stores.count > 1 {
+            ForEach(stores, id: \.storeId) { s in
+                HStack {
+                    Image(systemName: "storefront.fill").foregroundStyle(Theme.red)
+                    Text(s.storeName).font(Theme.body(.subheadline, weight: .semibold))
+                    Spacer()
+                    Text("\(s.items) items · save \(s.savings.dollars)")
+                        .font(Theme.body(.caption))
+                        .foregroundStyle(Theme.ink.opacity(0.6))
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -26,6 +53,7 @@ struct PlanView: View {
 
             switch tab {
             case .list:
+                storeSummary
                 ForEach(aisles, id: \.0) { aisle, indices in
                     Section(aisle) {
                         ForEach(indices, id: \.self) { i in

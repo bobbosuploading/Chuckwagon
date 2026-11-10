@@ -18,7 +18,9 @@ export const PREMIUM_MODEL = "claude-opus-5-5";
 const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
 
 export interface PlanRequest {
-  storeId: string;
+  storeId: string; // the main store
+  /** Optional: plan across several stores (up to 3). Each item is bought where it's on sale. */
+  storeIds?: string[];
   mealCount?: number; // default 4
   householdSize?: number; // default 3
   diet?: string; // e.g. "none", "vegetarian", "no pork"
@@ -86,11 +88,13 @@ const PlanSchema = z.object({
 });
 export type ModelPlan = z.infer<typeof PlanSchema>;
 
-const SYSTEM = `You plan budget-friendly home meals from one grocery store's current sale items.
+const SYSTEM = `You plan budget-friendly home meals from current grocery sale items, at one store or a few.
 
 Rules:
 - Build each meal mainly from the SALE ITEMS. Use non-sale items only where a meal truly needs them, and keep those cheap and common.
 - Only cite sale items that are listed, by their exact id. Never invent a deal or a price.
+- If SALE ITEMS come from more than one store, mix them freely, but don't send the shopper to an extra store for only one or two small savings.
+- Some sale items list a "deal" (such as buy 2, get 1 free) instead of a price; use them when the deal fits the meals.
 - Allergies are absolute: never include an allergen, even as a minor ingredient. Respect diet and dislikes too.
 - A diet applies to the whole dish, including sauces, marinades and glazes (for example, sugary BBQ or teriyaki sauces are not low carb).
 - Make each meal a real recipe with varied flavors; don't repeat the same main vegetable or sauce in most meals.
@@ -102,13 +106,14 @@ Rules:
 - If the sale items can't support the requested number of meals, return fewer and explain in notes.
 - The grocery list must be COMPLETE: every ingredient from every meal that isn't under HAVE AT HOME, combined into one line per product (usually 12 to 25 lines). Group it by aisle.`;
 
-function dealLine(d: Deal, id: string): string {
+function dealLine(d: Deal, id: string, storeName?: string): string {
   const size = d.size ? ` | ${d.size}` : "";
   const per = d.soldBy === "WEIGHT" ? "/lb" : "";
   const sale = d.salePrice !== null ? ` | sale $${d.salePrice.toFixed(2)}${per}` : "";
   const regular = d.regularPrice !== null ? ` | regular $${d.regularPrice.toFixed(2)}${per}` : "";
   const promo = d.promo ? ` | deal: ${d.promo.slice(0, 160)}` : "";
-  return `- id=${id} | ${d.name}${size}${sale}${regular}${promo} | ${d.category}`;
+  const at = storeName ? ` | at ${storeName}` : "";
+  return `- id=${id} | ${d.name}${size}${sale}${regular}${promo} | ${d.category}${at}`;
 }
 
 export interface PricedListItem {
@@ -123,12 +128,26 @@ export interface PricedListItem {
   lineTotal: number | null;
   lineSavings: number | null;
   forMeals: string[];
+  /** Where to buy it. Non-sale items go to the store with the most items. */
+  storeId: string;
+  storeName: string;
   checked: boolean;
+}
+
+export interface StoreTotal {
+  storeId: string;
+  storeName: string;
+  items: number;
+  saleItems: number;
+  savings: number;
 }
 
 export interface MealPlan {
   storeId: string;
   storeName: string;
+  storeIds: string[];
+  /** Per-store totals, in the order the shopper should visit (most items first). */
+  stores: StoreTotal[];
   model: string;
   request: PlanRequest;
   meals: ModelPlan["meals"];
@@ -155,25 +174,35 @@ export async function planMeals(
   modelOverride?: string
 ): Promise<MealPlan> {
   const model = modelOverride || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
-  const store = await db.doc(`stores/${req.storeId}`).get();
-  if (!store.exists) throw new Error(`Unknown store ${req.storeId}`);
-
-  // Pick the best deals (highest % off) per category.
-  const deals = new Map<string, Deal>(); // short id -> deal
-  for (const [category, limit] of Object.entries(DEALS_PER_CATEGORY)) {
-    const snap = await db
-      .collection("deals")
-      .where("storeId", "==", req.storeId)
-      .where("category", "==", category)
-      .orderBy("pctOff", "desc")
-      .limit(limit!)
-      .get();
-    snap.forEach((doc) => deals.set(`d${deals.size + 1}`, doc.data() as Deal));
+  const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
+  const storeNames = new Map<string, string>();
+  for (const id of storeIds) {
+    const doc = await db.doc(`stores/${id}`).get();
+    if (!doc.exists) throw new Error(`Unknown store ${id}`);
+    storeNames.set(id, doc.get("name"));
   }
-  if (deals.size === 0) throw new Error(`No current deals for ${req.storeId}`);
+  const multi = storeIds.length > 1;
 
-  const lines = [...deals.entries()].map(([id, d]) => dealLine(d, id)).join("\n");
-  const user = `STORE: ${store.get("name")}
+  // Pick the best deals (highest % off) per category, sharing the budget across stores.
+  const deals = new Map<string, Deal>(); // short id -> deal
+  for (const id of storeIds) {
+    for (const [category, limit] of Object.entries(DEALS_PER_CATEGORY)) {
+      const snap = await db
+        .collection("deals")
+        .where("storeId", "==", id)
+        .where("category", "==", category)
+        .orderBy("pctOff", "desc")
+        .limit(Math.ceil(limit! / storeIds.length))
+        .get();
+      snap.forEach((doc) => deals.set(`d${deals.size + 1}`, doc.data() as Deal));
+    }
+  }
+  if (deals.size === 0) throw new Error(`No current deals for ${storeIds.join(", ")}`);
+
+  const lines = [...deals.entries()]
+    .map(([id, d]) => dealLine(d, id, multi ? storeNames.get(d.storeId) : undefined))
+    .join("\n");
+  const user = `${multi ? "STORES" : "STORE"}: ${storeIds.map((id) => storeNames.get(id)).join(", ")}
 HOUSEHOLD SIZE: ${req.householdSize ?? 3}
 NUMBER OF MEALS: ${req.mealCount ?? 4}
 MAX COOK TIME: ${req.maxCookMinutes ?? 45} minutes
@@ -240,11 +269,21 @@ ${lines}`;
   let saleItems = 0;
   let savings = 0;
   let itemsNotPriced = 0;
+  // Non-sale items go to the store where most sale items are bought.
+  const saleCount = new Map<string, number>();
+  for (const li of plan.groceryList) {
+    const d = li.dealId ? deals.get(li.dealId) : undefined;
+    if (d) saleCount.set(d.storeId, (saleCount.get(d.storeId) ?? 0) + 1);
+  }
+  const mainStore = [...saleCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? req.storeId;
   const groceryList: PricedListItem[] = plan.groceryList.map((li) => {
     const deal = li.dealId ? deals.get(li.dealId) : undefined;
     if (!deal) {
       itemsNotPriced++;
-      return { ...li, dealId: null, onSale: false, salePrice: null, regularPrice: null, lineTotal: null, lineSavings: null, checked: false };
+      return {
+        ...li, dealId: null, onSale: false, salePrice: null, regularPrice: null, lineTotal: null, lineSavings: null,
+        storeId: mainStore, storeName: storeNames.get(mainStore)!, checked: false,
+      };
     }
     // Weight-priced items have per-lb prices, so multiply by the estimated pounds instead of the package count.
     const byWeight = deal.soldBy === "WEIGHT";
@@ -262,9 +301,32 @@ ${lines}`;
       regularPrice: deal.regularPrice,
       lineTotal,
       lineSavings,
+      storeId: deal.storeId,
+      storeName: storeNames.get(deal.storeId)!,
       checked: false,
     };
   });
+
+  // Totals per store, busiest store first.
+  const stores: StoreTotal[] = storeIds
+    .map((id) => {
+      const items = groceryList.filter((li) => li.storeId === id);
+      return {
+        storeId: id,
+        storeName: storeNames.get(id)!,
+        items: items.length,
+        saleItems: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
+        savings: round2(items.reduce((t, li) => t + (li.lineSavings ?? 0), 0)),
+      };
+    })
+    .filter((s) => s.items > 0)
+    .sort((a, b) => b.items - a.items);
+  let notes = plan.notes;
+  for (const extra of stores.slice(1)) {
+    if (extra.items <= 2 && extra.savings < 3) {
+      notes += `${notes ? " " : ""}Tip: ${extra.storeName} only saves you ${extra.savings > 0 ? `$${extra.savings.toFixed(2)}` : "a little"} on ${extra.items} item${extra.items === 1 ? "" : "s"}. You could skip that stop and buy ${extra.items === 1 ? "it" : "them"} at ${stores[0].storeName}.`;
+    }
+  }
 
   // Map short deal ids in ingredients back to Firestore ids.
   const meals = plan.meals.map((m) => ({
@@ -281,13 +343,15 @@ ${lines}`;
 
   return {
     storeId: req.storeId,
-    storeName: store.get("name"),
+    storeName: storeIds.map((id) => storeNames.get(id)).join(" + "),
+    storeIds,
+    stores,
     model: response.model,
     // Firestore rejects undefined values, so drop unset options.
     request: JSON.parse(JSON.stringify(req)) as PlanRequest,
     meals,
     groceryList,
-    notes: plan.notes,
+    notes,
     totals: { saleItems: round2(saleItems), savings: round2(savings), itemsNotPriced },
     usage: {
       inputTokens,

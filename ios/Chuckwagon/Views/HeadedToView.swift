@@ -3,6 +3,9 @@ import SwiftUI
 /// Confirms the trip, asks what's already at home, then shows the plan.
 struct HeadedToView: View {
     let store: Store
+    /// Other stores the shopper could also stop at.
+    var otherStores: [Store] = []
+    @State private var alsoAt: Set<String> = []
     @Environment(Preferences.self) private var prefs
     @Environment(\.dismiss) private var dismiss
     @State private var haveAtHome = ""
@@ -65,6 +68,21 @@ struct HeadedToView: View {
             } footer: {
                 Text("Changes here are saved for next time too.")
             }
+            if !otherStores.isEmpty {
+                Section {
+                    ForEach(otherStores) { other in
+                        let id = other.id ?? ""
+                        Toggle(other.name, isOn: Binding(
+                            get: { alsoAt.contains(id) },
+                            set: { on in if on { alsoAt.insert(id) } else { alsoAt.remove(id) } }
+                        ))
+                    }
+                } header: {
+                    Text("Also stop at")
+                } footer: {
+                    Text("We'll buy each item where it's cheapest and split your list by store.")
+                }
+            }
             Section {
                 TextField("e.g. rice, eggs, onions", text: $haveAtHome, axis: .vertical)
             } header: {
@@ -98,7 +116,7 @@ struct HeadedToView: View {
         error = nil
         defer { planning = false }
         do {
-            plan = try await Backend.planMeals(storeId: storeId, prefs: prefs, haveAtHome: haveAtHome, premium: premium)
+            plan = try await Backend.planMeals(storeId: storeId, alsoStoreIds: Array(alsoAt), prefs: prefs, haveAtHome: haveAtHome, premium: premium)
         } catch {
             self.error = error.localizedDescription
         }

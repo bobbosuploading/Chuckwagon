@@ -31,9 +31,10 @@ enum Backend {
     }
 
     /// "Headed to [store]": asks the backend for meals and a grocery list.
-    static func planMeals(storeId: String, prefs: Preferences, haveAtHome: String, premium: Bool = false) async throws -> MealPlan {
+    static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false) async throws -> MealPlan {
         var payload: [String: Any] = [
             "storeId": storeId,
+            "storeIds": [storeId] + alsoStoreIds,
             "mealCount": prefs.mealCount,
             "householdSize": prefs.householdSize,
             "diet": prefs.diet == "None" ? "none" : prefs.diet,

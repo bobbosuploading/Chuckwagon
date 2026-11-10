@@ -67,7 +67,9 @@ struct HomeView: View {
                 .padding(.bottom, 8)
             }
             .sheet(isPresented: $showingHeadedTo) {
-                if let store = currentStore { HeadedToView(store: store) }
+                if let store = currentStore {
+                    HeadedToView(store: store, otherStores: myStores.filter { $0.id != store.id && $0.chain != store.chain })
+                }
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
             .sheet(isPresented: $showingSettings) {
