@@ -58,8 +58,7 @@ struct HomeView: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
-                    Button { showingReceipt = true } label: { Label("Scan a receipt", systemImage: "doc.text.viewfinder") }
-                        .disabled(currentStore == nil)
+                    Button { showingReceipt = true } label: { Label("Scan a receipt or ad", systemImage: "doc.text.viewfinder") }
                     Button { showingSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }
@@ -83,8 +82,14 @@ struct HomeView: View {
                 DealDetailView(deal: deal, storeName: currentStore?.name)
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
-            .sheet(isPresented: $showingReceipt) {
-                if let store = currentStore { ReceiptScanView(store: store) }
+            .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
+                ReceiptScanView(store: currentStore, myStores: myStores) { added in
+                    // A store added from an ad photo: show it now, even if favorites would hide it.
+                    if !prefs.favoriteStoreIds.isEmpty, !prefs.favoriteStoreIds.contains(added) {
+                        prefs.favoriteStoreIds.append(added)
+                    }
+                    storeId = added
+                }
             }
             .sheet(isPresented: $showingSettings, onDismiss: { Task { await loadStores() } }) {
                 NavigationStack {
@@ -337,6 +342,11 @@ struct DealCard: View {
             }
             if let tip = deal.stockUp {
                 StockUpBadge(tip: tip)
+            }
+            if deal.fromShopperPhoto {
+                Label((deal.confirmations ?? 1) > 1 ? "From shoppers' ad photos" : "From a shopper's ad photo", systemImage: "camera")
+                    .font(Theme.body(.caption2))
+                    .foregroundStyle(Theme.ink.opacity(0.55))
             }
         }
         .padding(10)

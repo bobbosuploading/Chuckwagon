@@ -2,44 +2,85 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// "Scan a receipt": a photo of a receipt teaches Chuckwagon a store's everyday prices,
+/// "Scan a receipt or ad". A receipt photo teaches Chuckwagon a store's everyday prices,
 /// so meal plans can price the items that aren't on sale. Sale prices are tagged and kept
 /// out of the everyday prices (functions/src/receiptSales.ts).
+/// A weekly ad photo adds that week's deals for a store whose ad we can't load
+/// automatically, and can add the store itself (functions/src/adScans.ts).
 struct ReceiptScanView: View {
-    let store: Store
+    enum Mode: String, CaseIterable, Identifiable {
+        case receipt = "Receipt"
+        case ad = "Weekly ad"
+        var id: String { rawValue }
+    }
+
+    let store: Store?
+    var myStores: [Store] = []
+    /// Called with a store's id when an ad scan added it.
+    var onStoreAdded: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
+    @Environment(Preferences.self) private var prefs
+    @State private var mode: Mode = .receipt
+    /// The store an ad is for; nil means "another store" (named from the ad).
+    @State private var adStoreId: String?
     @State private var pickerItem: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var scanning = false
     @State private var result: Backend.ReceiptScan?
+    @State private var adResult: Backend.AdScan?
     @State private var error: String?
+
+    init(store: Store?, myStores: [Store] = [], onStoreAdded: @escaping (String) -> Void = { _ in }) {
+        self.store = store
+        self.myStores = myStores
+        self.onStoreAdded = onStoreAdded
+        _adStoreId = State(initialValue: store?.id)
+        _mode = State(initialValue: store == nil ? .ad : .receipt)
+    }
+
+    private var canScan: Bool { !scanning && (mode == .ad || store != nil) }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Text("Snap your \(store.chain) receipt and we'll learn its everyday prices. Your plans get more accurate totals, and so does everyone shopping \(store.chain).")
+                    Picker("What are you scanning?", selection: $mode) {
+                        ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(scanning)
+                    if mode == .ad {
+                        Picker("Ad for", selection: $adStoreId) {
+                            ForEach(myStores) { Text($0.name).tag($0.id) }
+                            Text("Another store").tag(String?.none)
+                        }
+                        .disabled(scanning)
+                    }
+                    Text(intro)
                         .font(Theme.body(.subheadline))
                         .foregroundStyle(Theme.ink.opacity(0.8))
                     if UIImagePickerController.isSourceTypeAvailable(.camera) {
                         Button { showingCamera = true } label: { Label("Take a photo", systemImage: "camera.fill") }
-                            .disabled(scanning)
+                            .disabled(!canScan)
                     }
                     PhotosPicker(selection: $pickerItem, matching: .images) {
                         Label("Choose from Photos", systemImage: "photo.on.rectangle")
                     }
-                    .disabled(scanning)
+                    .disabled(!canScan)
                 } footer: {
-                    Text("Lay the receipt flat in good light. We keep the prices, not the photo.")
+                    Text(mode == .receipt
+                         ? "Lay the receipt flat in good light. We keep the prices, not the photo."
+                         : "One page per photo, flat and in good light. Include the dates the prices are good for. Coupons can't be scanned yet. We keep the deals, not the photo.")
                 }
+                .onChange(of: mode) { _, _ in error = nil }
 
                 if scanning {
-                    Section { HStack { ProgressView(); Text("Reading your receipt…").padding(.leading, 8) } }
+                    Section { HStack { ProgressView(); Text(mode == .receipt ? "Reading your receipt…" : "Reading the ad…").padding(.leading, 8) } }
                 }
                 if let error {
                     Section { Text(error).foregroundStyle(Color.chuckRed) }
                 }
-                if let reward = result?.reward {
+                if let reward = result?.reward ?? adResult?.reward {
                     Section { rewardView(reward) }
                 }
                 if let result {
@@ -55,8 +96,17 @@ struct ReceiptScanView: View {
                         }
                     }
                 }
+                if let adResult {
+                    Section {
+                        ForEach(adResult.deals, id: \.self) { adDealRow($0) }
+                    } header: {
+                        Text("Added \(adResult.deals.count) deals at \(adResult.storeName)")
+                    } footer: {
+                        Text(adFooter(adResult))
+                    }
+                }
             }
-            .navigationTitle("Scan a receipt")
+            .navigationTitle(mode == .receipt ? "Scan a receipt" : "Scan a weekly ad")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Done") { dismiss() } }
             .creamBackground()
@@ -77,16 +127,74 @@ struct ReceiptScanView: View {
         }
     }
 
+    private var intro: String {
+        switch mode {
+        case .receipt:
+            guard let store else { return "Pick a store on the home screen first." }
+            return "Snap your \(store.chain) receipt and we'll learn its everyday prices. Your plans get more accurate totals, and so does everyone shopping \(store.chain)."
+        case .ad:
+            if let id = adStoreId, let chosen = myStores.first(where: { $0.id == id }) {
+                return "Snap a page of \(chosen.chain)'s printed weekly ad and its deals go into your plans, and everyone else's near you."
+            }
+            return "Have a printed ad from a store that isn't in Chuckwagon, like a local grocer? Snap a page and we'll add the store near \(prefs.zip.isEmpty ? "you" : prefs.zip) with its deals."
+        }
+    }
+
+    private func adFooter(_ scan: Backend.AdScan) -> String {
+        var parts = ["Good through \(Self.shortDate(scan.validTo)). These deals go away when the ad ends."]
+        if scan.newStore { parts.insert("We added \(scan.storeName) to your stores.", at: 0) }
+        parts.append("Scan the other pages too for more deals.")
+        return parts.joined(separator: " ")
+    }
+
+    /// "2026-11-18" -> "Nov 18".
+    private static func shortDate(_ iso: String) -> String {
+        guard let date = try? Date(iso, strategy: Date.ISO8601FormatStyle(timeZone: .current).year().month().day()) else { return iso }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
     private func scan(_ image: UIImage) async {
-        guard let storeId = store.id else { return }
         scanning = true
         error = nil
         result = nil
+        adResult = nil
         defer { scanning = false }
         do {
-            result = try await Backend.scanReceipt(storeId: storeId, image: image)
+            switch mode {
+            case .receipt:
+                guard let storeId = store?.id else { return }
+                result = try await Backend.scanReceipt(storeId: storeId, image: image)
+            case .ad:
+                if adStoreId == nil, prefs.zip.isEmpty {
+                    error = "Set your ZIP code in Settings first, so we know where the store is."
+                    return
+                }
+                let scan = try await Backend.scanAd(storeId: adStoreId, zip: prefs.zip, latitude: prefs.latitude, longitude: prefs.longitude, image: image)
+                adResult = scan
+                if scan.newStore { onStoreAdded(scan.storeId) }
+                // Later pages of the same ad go to the same store.
+                adStoreId = scan.storeId
+            }
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    private func adDealRow(_ deal: Backend.AdScan.Deal) -> some View {
+        let per = deal.soldBy == "WEIGHT" ? "/lb" : ""
+        return HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text([deal.brand, deal.name].compactMap { $0 }.joined(separator: " "))
+                if let size = deal.size { Text(size).font(.caption).foregroundStyle(.secondary) }
+                if let promo = deal.promo { Text(promo).font(.caption).foregroundStyle(Theme.red) }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                if let sale = deal.salePrice { Text(sale.dollars + per).bold().foregroundStyle(Theme.red) }
+                if let regular = deal.regularPrice {
+                    Text("reg " + regular.dollars + per).font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -145,13 +253,13 @@ struct ReceiptScanView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let left = reward.receiptsToNextChefPick, reward.earnedChefPick != true {
-                    Text("\(left) more receipt\(left == 1 ? "" : "s") until a free Chef's pick.")
+                    Text("\(left) more scan\(left == 1 ? "" : "s") until a free Chef's pick.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
         } else {
             Text(reward.reason == "already-scanned"
-                 ? "This receipt was already scanned, so no reward this time. The prices still help!"
+                 ? "This was already scanned, so no reward this time. The prices still help!"
                  : "We couldn't read enough prices for a reward. Try a flatter, brighter photo.")
                 .font(.caption).foregroundStyle(.secondary)
         }

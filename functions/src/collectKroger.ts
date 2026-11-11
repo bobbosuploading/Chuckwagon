@@ -39,7 +39,8 @@ export interface Deal {
   validTo?: string;
   /** Worth buying extra of (set when saved; see stockUp.ts). */
   stockUp?: StockUp | null;
-  source: "kroger-api" | "flipp" | "walmart-api";
+  /** shopper-ad: read from a shopper's photo of a printed ad (see adScans.ts). */
+  source: "kroger-api" | "flipp" | "walmart-api" | "shopper-ad";
   fetchedAt: Timestamp;
 }
 
