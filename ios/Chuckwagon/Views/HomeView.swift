@@ -91,6 +91,7 @@ struct HomeView: View {
             .task {
                 do {
                     try await Backend.signIn()
+                    await prefs.fillInCoordinatesIfMissing()
                     stores = try await Backend.stores()
                     storeId = storeId ?? myStores.first?.id
                 } catch {

@@ -132,6 +132,7 @@ struct PreferencesForm: View {
         .foregroundStyle(Theme.ink)
         .task {
             guard showsStores else { return }
+            await prefs.fillInCoordinatesIfMissing()
             do { stores = try await Backend.stores() } catch { loadError = error.localizedDescription }
         }
     }
