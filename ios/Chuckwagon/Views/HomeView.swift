@@ -192,9 +192,16 @@ struct HomeView: View {
                     category = nil
                     stockUpOnly = false
                 }
-                chip("Stock up", symbol: "shippingbox.fill", selected: stockUpOnly) { stockUpOnly.toggle() }
+                // One chip at a time: "Stock up" looks across every aisle, so it clears the aisle.
+                chip("Stock up", symbol: "shippingbox.fill", selected: stockUpOnly) {
+                    stockUpOnly = true
+                    category = nil
+                }
                 ForEach(DealCategory.allCases) { c in
-                    chip(c.label, symbol: c.symbol, selected: category == c) { category = c }
+                    chip(c.label, symbol: c.symbol, selected: category == c && !stockUpOnly) {
+                        category = c
+                        stockUpOnly = false
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -237,6 +244,13 @@ struct HomeView: View {
                     .padding(.top, 40)
             }
         } else {
+            if stockUpOnly {
+                Label("\(visibleDeals.count) prices worth buying extra of, from every aisle. Tap STOCK UP on a deal for how much to buy and how to keep it.",
+                      systemImage: "shippingbox.fill")
+                    .font(Theme.body(.footnote))
+                    .foregroundStyle(Theme.ink.opacity(0.7))
+                    .padding(.horizontal, 20)
+            }
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(visibleDeals) { deal in
                     DealCard(deal: deal)

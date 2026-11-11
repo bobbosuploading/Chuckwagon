@@ -29,6 +29,7 @@ What's new since the first build:
 - If you add a store under "Also stop at" and nothing there beats the other stores, the plan's notes now say so instead of leaving it off without a word.
 - Tap any deal on the home screen to see all of it: a bigger ad picture, the full name and deal text, the price and the store.
 - The deals banner no longer says "Up to 0% off" when a store's deals are all "buy this, get that" offers.
+- The "Stock up" button on the home screen now works on its own: it shows every stock-up price from all aisles, and picking an aisle like Meat turns it off.
 
 Please try: setting your ZIP, making a plan with a budget, swapping a meal on the Meals tab, scanning a receipt, and sending a list to your store. Tell us about anything that looks wrong or confusing.
 
