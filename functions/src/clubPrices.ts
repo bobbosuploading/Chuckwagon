@@ -286,7 +286,15 @@ export async function collectSamsClub(
     if (seen.has(key)) continue;
     seen.add(key);
     const what = termFor(r, name);
-    const pack = packAmount(name);
+    // The site's own unit price wins when it is per lb or per fl oz ("$5.29/lb"); meat that is
+    // "priced per pound" has no size in its name, and its price is for an average pack.
+    const attrs = (r.attributes ?? {}) as Record<string, unknown>;
+    const listed = String(attrs["Unit price"] ?? r.unit_price ?? "").toLowerCase().match(/\$?(\d+(?:\.\d+)?)\s*\/\s*(lb|fl\.? ?oz)/);
+    const listedPrice = listed ? Number(listed[1]) : 0;
+    const pack =
+      listedPrice > 0
+        ? { unit: (listed![2] === "lb" ? "lb" : "floz") as UnitBasis, amount: round3(price / listedPrice) }
+        : packAmount(name);
     if (!what || !pack || pack.amount <= 0) continue;
     const rule = keepRule(name, what.category);
     parsed.push({
@@ -324,8 +332,9 @@ export async function collectSamsClub(
     chain: "Sam's Club",
     updatedAt: now,
     source: "samsclub.com",
-    // Best buys first, then things with nothing to compare, then what's cheaper elsewhere.
-    items: [...items].sort((a, b) => (b.pctCheaper ?? -1) - (a.pctCheaper ?? -1)),
+    // Only items with a grocery price to compare (this also drops search results that aren't
+    // the staple we looked for). Best buys first.
+    items: items.filter((i) => i.pctCheaper !== null).sort((a, b) => (b.pctCheaper ?? 0) - (a.pctCheaper ?? 0)),
   });
   const book: PriceBookItem[] = items.map((i) => ({
     name: i.name,

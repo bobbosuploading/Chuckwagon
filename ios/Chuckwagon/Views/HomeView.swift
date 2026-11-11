@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var showingSettings = false
     @State private var showingPlans = false
     @State private var showingReceipt = false
+    @State private var showingStockUpTrip = false
 
     private var myStores: [Store] {
         let near = prefs.nearby(stores)
@@ -58,6 +59,7 @@ struct HomeView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
                     Button { showingReceipt = true } label: { Label("Scan a receipt or ad", systemImage: "doc.text.viewfinder") }
+                    Button { showingStockUpTrip = true } label: { Label("Stock-up trip", systemImage: "shippingbox.fill") }
                     Button { showingSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }
@@ -78,6 +80,7 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
+            .sheet(isPresented: $showingStockUpTrip) { StockUpTripView() }
             .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
                 ReceiptScanView(store: currentStore, myStores: myStores) { added in
                     // A store added from an ad photo: show it now, even if favorites would hide it.
