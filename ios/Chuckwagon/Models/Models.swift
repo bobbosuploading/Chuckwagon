@@ -311,3 +311,40 @@ extension Double {
     /// "$60" with no cents, for budgets.
     var wholeDollars: String { formatted(.currency(code: "USD").precision(.fractionLength(0))) }
 }
+
+/// A deal a shopper shared from social media, a deal site or a message, from Firestore
+/// `sharedDeals/{id}` (functions/src/sharedDeals.ts). It shows until it ends or shoppers say it's gone.
+struct SharedDeal: Identifiable, Codable, Hashable {
+    @DocumentID var id: String?
+    var storeId: String
+    var storeName: String?
+    var chain: String
+    /// "one-store" (that store only, e.g. clearance) or "chain" (every store of the chain).
+    var scope: String
+    var clearance: Bool?
+    var name: String
+    var brand: String?
+    var size: String?
+    var soldBy: String?
+    var category: String
+    var regularPrice: Double?
+    var salePrice: Double?
+    var pctOff: Int?
+    var promo: String?
+    /// Last day it shows (ISO date): from the post, else a few days after it was shared.
+    var validTo: String
+    var endDateFromPost: Bool?
+    /// The post it came from, when a link was shared.
+    var url: String?
+    /// Shoppers who said it's still there (the sharer counts) and who said it's gone.
+    var here: [String]?
+    var gone: [String]?
+    var updatedAt: Timestamp?
+
+    var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
+    var stillThereCount: Int { here?.count ?? 0 }
+    var goneCount: Int { gone?.count ?? 0 }
+
+    /// Same as the backend's chainKey: "H-E-B" -> "heb".
+    static func chainKey(_ s: String) -> String { s.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) } }
+}
