@@ -24,5 +24,6 @@ jobs:
       - run: node lib/cli-sams.js
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          REUSE_LAST: "1"
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
