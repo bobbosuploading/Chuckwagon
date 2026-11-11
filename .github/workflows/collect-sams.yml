@@ -18,6 +18,10 @@ on:
       terms:
         description: "Only these searches, comma separated (blank = all staples)"
         default: ""
+      force:
+        description: "Run even if this month's prices were already saved (uses more Apify credit)"
+        type: boolean
+        default: false
 
 jobs:
   collect:
@@ -46,6 +50,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SAMS_PRICES_ENABLED: ${{ vars.SAMS_PRICES_ENABLED }}
           DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '1' || '0' }}
           MAX_ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_items || '' }}
           TERMS: ${{ github.event_name == 'workflow_dispatch' && inputs.terms || '' }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json

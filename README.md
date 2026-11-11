@@ -155,3 +155,11 @@ These are website prices, the same for every club. Manual runs default to a 20-i
 `REUSE_LAST=1` redoes the comparison on the last run's rows without scraping again.
 Like the H-E-B scraper, turn it off before a paid launch: set the repository variable
 `SAMS_PRICES_ENABLED` to `false`.
+
+### Staying inside Apify's free $5
+
+The H-E-B run (about $4.30) and the Sam's Club run (about 30 cents) together nearly fill the month.
+GitHub can start a scheduled run hours late, so a run by hand plus the late scheduled one once ran
+H-E-B twice in a day and used the whole allowance. Both jobs now check the `runs` log and skip when
+that job already saved prices in the last 25 days (`functions/src/apifyBudget.ts`). The "force" input
+on a manual run overrides this. Test runs still cost money, so keep them small.
