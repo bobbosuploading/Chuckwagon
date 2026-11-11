@@ -26,6 +26,7 @@ What's new since the first build:
 - Store distance: in Settings, under "Your stores", pick how far to look for stores (10, 20, 30 or 50 miles). It starts at 30.
 - Stores in nearby towns, like Kroger, now show up even when there isn't one in your own ZIP code.
 - The store menu on the home screen now updates as soon as you close Settings, so stores you pick there show up right away.
+- If you add a store under "Also stop at" and nothing there beats the other stores, the plan's notes now say so instead of leaving it off without a word.
 
 Please try: setting your ZIP, making a plan with a budget, swapping a meal on the Meals tab, scanning a receipt, and sending a list to your store. Tell us about anything that looks wrong or confusing.
 
