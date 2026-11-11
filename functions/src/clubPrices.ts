@@ -18,7 +18,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { getFirestore } from "firebase-admin/firestore";
 import { z } from "zod";
 import type { Category } from "./config";
-import { PriceBookItem, shortlist } from "./priceBook";
+import { PriceBookItem, shortlist, words } from "./priceBook";
 import { MATCH_MODEL } from "./priceItems";
 import { keepRule } from "./stockUp";
 
@@ -91,7 +91,13 @@ const num = (v: unknown): number | null => {
  * sold as "6 lb, 3 pk" compares per lb. Null when nothing can be read.
  */
 export function packAmount(text: string): { unit: UnitBasis; amount: number } | null {
-  const t = text.toLowerCase().replace(/,/g, " ");
+  // Drop fractions ("1/3 lb. patties"), count ranges ("21-25 ct. per pound") and slice counts.
+  const t = text
+    .toLowerCase()
+    .replace(/,/g, " ")
+    .replace(/\d+\s*\/\s*\d+\s*(lbs?|oz)\.?/g, " ")
+    .replace(/\d+\s*-\s*\d+\s*(ct|count)\.?(\s*per\s*(pound|lb))?/g, " ")
+    .replace(/\b(6[1-9]|[7-9]\d|\d{3,})\s*(ct|count|slices)\b\.?/g, " ");
   const multi =
     t.match(/(\d+)\s*(?:x|pk\.?|pack|ct\.?|count)\s*(?:of|x|\/|-)?\s*(\d+(?:\.\d+)?)\s*-?\s*(fl\.?\s*oz|oz|ounces?|lbs?|pounds?)/) ??
     null;
@@ -112,7 +118,7 @@ export function packAmount(text: string): { unit: UnitBasis; amount: number } | 
   if (single) return weigh(Number(single[1]), single[2]);
   const count = t.match(/(\d+)\s*(?:ct\.?|count|pk\.?|pack|eggs|rolls)\b/);
   if (count) return { unit: "ct", amount: Number(count[1]) };
-  const dozen = t.match(/(\d+)\s*dozen/);
+  const dozen = t.match(/(\d+(?:\.\d+)?)\s*dozen/);
   if (dozen) return { unit: "ct", amount: Number(dozen[1]) * 12 };
   return null;
 }
@@ -132,6 +138,16 @@ async function apify<T>(token: string, path: string, init?: RequestInit): Promis
   });
   if (!res.ok) throw new Error(`Apify ${path} -> HTTP ${res.status} ${await res.text()}`);
   return (await res.json()) as T;
+}
+
+/** Rows from the most recent finished run, so a comparison can be redone without paying to scrape again. */
+async function lastRunRows(token: string): Promise<SamsRow[]> {
+  const last = await apify<{ data: { defaultDatasetId: string } }>(token, `/acts/${ACTOR}/runs/last?status=SUCCEEDED`);
+  const res = await fetch(`${API}/datasets/${last.data.defaultDatasetId}/items?clean=true&format=json`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Apify dataset -> HTTP ${res.status}`);
+  return (await res.json()) as SamsRow[];
 }
 
 /** One scraper run over the search pages for `terms`, at most `maxItems` rows in all. */
@@ -167,18 +183,18 @@ async function runScraper(token: string, terms: string[], maxItems: number): Pro
   return (await res.json()) as SamsRow[];
 }
 
-/** Which of our staples a product is, from the search it came from or its name. */
-function termFor(row: SamsRow, name: string): { category: Category; term: string } | null {
-  const from = decodeURIComponent(String(row.source_url ?? row.list_url ?? row.category_url ?? row.search_url ?? "")).toLowerCase();
-  const lower = name.toLowerCase();
-  let byName: { category: Category; term: string } | null = null;
+/** Which of our staples a product is, from its name ("priced" must not count as "rice"). */
+function termFor(name: string): { category: Category; term: string } | null {
+  const have = new Set(words(name));
+  let best: { category: Category; term: string } | null = null;
   for (const [category, terms] of Object.entries(SAMS_TERMS) as [Category, string[]][]) {
     for (const term of terms) {
-      if (from.includes(`q=${term}`) || from.includes(`q=${term.replace(/ /g, "+")}`)) return { category, term };
-      if (!byName && term.split(" ").every((w) => lower.includes(w.replace(/s$/, "")))) byName = { category, term };
+      const want = words(term);
+      // The longest matching term wins: "frozen shrimp" over a one-word term.
+      if (want.every((w) => have.has(w)) && (!best || want.length > words(best.term).length)) best = { category, term };
     }
   }
-  return byName;
+  return best;
 }
 
 const PickSchema = z.object({
@@ -199,12 +215,12 @@ Never match a different food that shares a word. Return an empty list when none 
 /** Asks Haiku which grocery products are the same food as each club item. */
 async function matchToGrocery(
   anthropic: Anthropic,
-  items: { name: string; unit: UnitBasis }[],
+  items: { name: string; term: string; unit: UnitBasis }[],
   books: Map<string, PriceBookItem[]>
 ): Promise<{ chain: string; product: string; unitPrice: number }[][]> {
   const letters = "abcdefghijklmnopqrstuvwxyz";
   const out: { chain: string; product: string; unitPrice: number }[][] = items.map(() => []);
-  const BATCH = 40;
+  const BATCH = 25;
   for (let start = 0; start < items.length; start += BATCH) {
     const lines: string[] = [];
     const options = new Map<number, { chain: string; p: PriceBookItem; unitPrice: number }[]>();
@@ -212,9 +228,11 @@ async function matchToGrocery(
       const i = start + k;
       const cands: { chain: string; p: PriceBookItem; unitPrice: number }[] = [];
       for (const [chain, book] of books) {
-        for (const p of shortlist(it.name, book, 12)) {
+        // Candidates come from the staple searched for ("chicken breast"): the club's long
+        // product names share too few words with grocery names to shortlist well.
+        for (const p of shortlist(it.term, book, 30)) {
           const u = bookUnitPrice(p);
-          if (u && u.unit === it.unit && cands.filter((c) => c.chain === chain).length < 5) {
+          if (u && u.unit === it.unit && cands.filter((c) => c.chain === chain).length < 8) {
             cands.push({ chain, p, unitPrice: u.unitPrice });
           }
         }
@@ -227,7 +245,7 @@ async function matchToGrocery(
     if (!lines.length) continue;
     const response = await anthropic.beta.messages.parse({
       model: MATCH_MODEL,
-      max_tokens: 4000,
+      max_tokens: 6000,
       output_config: { format: betaZodOutputFormat(PickSchema) },
       system: SYSTEM,
       messages: [{ role: "user", content: lines.join("\n") }],
@@ -270,22 +288,23 @@ async function groceryBooks(): Promise<Map<string, PriceBookItem[]>> {
 export async function collectSamsClub(
   token: string,
   anthropic: Anthropic | null,
-  opts: { dryRun?: boolean; maxItems?: number; terms?: string[] } = {}
+  opts: { dryRun?: boolean; maxItems?: number; terms?: string[]; reuseLast?: boolean } = {}
 ) {
   const maxItems = Math.min(opts.maxItems ?? SAMS_MAX_ITEMS, SAMS_MAX_ITEMS);
   const terms = opts.terms ?? Object.values(SAMS_TERMS).flat();
-  const rows = await runScraper(token, terms, maxItems);
+  const rows = opts.reuseLast ? await lastRunRows(token) : await runScraper(token, terms, maxItems);
 
   const seen = new Set<string>();
-  const parsed: Omit<ClubItem, "compare" | "pctCheaper" | "worthIt">[] = [];
+  const parsed: (Omit<ClubItem, "compare" | "pctCheaper" | "worthIt"> & { term: string })[] = [];
   for (const r of rows) {
     const name = String(r.name ?? r.title ?? "").replace(/\s+/g, " ").trim();
     const price = num(r.price);
-    if (!name || !price || r.in_stock === false) continue;
+    // Whole cases are for restaurants, not a home freezer.
+    if (!name || !price || r.in_stock === false || /\bcase\b/i.test(name) || price > 80) continue;
     const key = String(r.product_id ?? r.url ?? name);
     if (seen.has(key)) continue;
     seen.add(key);
-    const what = termFor(r, name);
+    const what = termFor(name);
     // The site's own unit price wins when it is per lb or per fl oz ("$5.29/lb"); meat that is
     // "priced per pound" has no size in its name, and its price is for an average pack.
     const attrs = (r.attributes ?? {}) as Record<string, unknown>;
@@ -299,6 +318,7 @@ export async function collectSamsClub(
     const rule = keepRule(name, what.category);
     parsed.push({
       name: name.slice(0, 110),
+      term: what.term,
       category: what.category,
       price,
       unitPrice: round3(price / pack.amount),
@@ -313,11 +333,11 @@ export async function collectSamsClub(
 
   const summary = { rows: rows.length, items: parsed.length, compared: 0, worthIt: 0, saved: false };
   if (opts.dryRun || !anthropic || parsed.length === 0) {
-    return { summary, items: parsed.map((p) => ({ ...p, compare: [], pctCheaper: null, worthIt: false })) as ClubItem[], rows };
+    return { summary, items: parsed.map(({ term: _t, ...p }) => ({ ...p, compare: [], pctCheaper: null, worthIt: false })) as ClubItem[], rows };
   }
 
   const matches = await matchToGrocery(anthropic, parsed, await groceryBooks());
-  const items: ClubItem[] = parsed.map((p, i) => {
+  const items: ClubItem[] = parsed.map(({ term: _t, ...p }, i) => {
     const compare = matches[i];
     const best = compare[0]?.unitPrice;
     const pctCheaper = best ? Math.round(((best - p.unitPrice) / best) * 100) : null;
