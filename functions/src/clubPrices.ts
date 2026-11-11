@@ -220,7 +220,7 @@ async function matchToGrocery(
 ): Promise<{ chain: string; product: string; unitPrice: number }[][]> {
   const letters = "abcdefghijklmnopqrstuvwxyz";
   const out: { chain: string; product: string; unitPrice: number }[][] = items.map(() => []);
-  const BATCH = 25;
+  const BATCH = 12;
   for (let start = 0; start < items.length; start += BATCH) {
     const lines: string[] = [];
     const options = new Map<number, { chain: string; p: PriceBookItem; unitPrice: number }[]>();
@@ -243,14 +243,21 @@ async function matchToGrocery(
       options.get(i)!.forEach((c, j) => lines.push(`  ${letters[j]}) ${c.p.name}${c.p.size ? ` | ${c.p.size}` : ""}`));
     });
     if (!lines.length) continue;
-    const response = await anthropic.beta.messages.parse({
-      model: MATCH_MODEL,
-      max_tokens: 6000,
-      output_config: { format: betaZodOutputFormat(PickSchema) },
-      system: SYSTEM,
-      messages: [{ role: "user", content: lines.join("\n") }],
-    });
-    for (const pick of response.parsed_output?.picks ?? []) {
+    let picks: z.infer<typeof PickSchema>["picks"] = [];
+    try {
+      const response = await anthropic.beta.messages.parse({
+        model: MATCH_MODEL,
+        max_tokens: 8000,
+        output_config: { format: betaZodOutputFormat(PickSchema) },
+        system: SYSTEM,
+        messages: [{ role: "user", content: lines.join("\n") }],
+      });
+      picks = response.parsed_output?.picks ?? [];
+    } catch (err) {
+      // One bad batch shouldn't lose the whole list; those items just go uncompared.
+      console.warn(`Matching items ${start + 1} to ${start + BATCH} failed: ${(err as Error).message}`);
+    }
+    for (const pick of picks) {
       const cands = options.get(pick.item - 1);
       if (!cands) continue;
       const best = new Map<string, { chain: string; product: string; unitPrice: number }>();
