@@ -3,6 +3,7 @@ import SwiftUI
 /// This week's deals at one store, with the "Headed to" button.
 struct HomeView: View {
     @Environment(Preferences.self) private var prefs
+    @Environment(\.scenePhase) private var scenePhase
     @State private var stores: [Store] = []
     @State private var storeId: String?
     @State private var category: DealCategory?
@@ -81,7 +82,7 @@ struct HomeView: View {
             .sheet(isPresented: $showingReceipt) {
                 if let store = currentStore { ReceiptScanView(store: store) }
             }
-            .sheet(isPresented: $showingSettings) {
+            .sheet(isPresented: $showingSettings, onDismiss: { Task { await loadStores() } }) {
                 NavigationStack {
                     PreferencesForm(showsStores: true)
                         .navigationTitle("Settings")
@@ -91,14 +92,33 @@ struct HomeView: View {
             .task {
                 do {
                     try await Backend.signIn()
-                    stores = try await Backend.stores()
-                    storeId = storeId ?? myStores.first?.id
                 } catch {
                     self.error = error.localizedDescription
+                    return
                 }
+                await loadStores()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await loadStores() } }
             }
             .task(id: "\(currentStore?.dealsStoreId ?? "")|\(category?.rawValue ?? "all")") { await load() }
         }
+    }
+
+    /// Reload the store list. Runs at launch, after Settings closes and when the app comes back
+    /// to the front, so stores added since launch (or a new ZIP, radius or favorites) show up.
+    private func loadStores() async {
+        await prefs.fillInCoordinatesIfMissing()
+        do {
+            stores = try await Backend.stores()
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        // Keep the chosen store only if it is still one of the shopper's stores.
+        if let id = storeId, !myStores.contains(where: { $0.id == id }) { storeId = nil }
+        storeId = storeId ?? myStores.first?.id
     }
 
     // MARK: Header

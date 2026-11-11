@@ -35,9 +35,22 @@ final class Preferences {
             if store.coordinate != nil, latitude != 0 {
                 return store.distanceMiles(fromLat: latitude, lng: longitude) ?? .infinity <= miles
             }
+            // No map position to measure from: trust the collector's list of ZIPs it searched.
+            if store.areaZips?.contains(zip) == true { return true }
             if let storeZip = store.zip ?? store.address?.zipCode { return storeZip == zip }
             return true // older store records without a location
         }
+    }
+
+    /// Older installs (or a failed lookup) saved a ZIP without map coordinates, which hides
+    /// stores outside that exact ZIP. Look the coordinates up again when that happens.
+    @MainActor
+    func fillInCoordinatesIfMissing() async {
+        guard !zip.isEmpty, latitude == 0 else { return }
+        let lookedUp = zip
+        guard let coord = await Location.coordinates(forZip: lookedUp), zip == lookedUp else { return }
+        latitude = coord.latitude
+        longitude = coord.longitude
     }
 
     static let defaultBudget = 60

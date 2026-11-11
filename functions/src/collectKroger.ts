@@ -187,6 +187,8 @@ export async function collectKrogerDeals(
     address: store.address,
     zip: store.address.zipCode ?? null,
     geo: store.geo ?? null,
+    // Shopper ZIPs this store was found near, so the app can match it even without coordinates.
+    areaZips: store.zips,
     source: "kroger-api",
     updatedAt: now,
   });

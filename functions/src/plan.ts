@@ -681,6 +681,13 @@ function assemblePlan(a: {
     }
   }
 
+  // Say so when a store the shopper picked ended up with nothing, so it doesn't look dropped.
+  const unused = a.stores.filter((s) => !stores.some((t) => t.storeId === s.storeId)).map((s) => s.storeName);
+  if (unused.length > 0 && stores.length > 0) {
+    const names = unused.length > 1 ? `${unused.slice(0, -1).join(", ")} or ${unused[unused.length - 1]}` : unused[0];
+    notes += `${notes ? " " : ""}Nothing at ${names} beat these prices for this week's meals, so ${unused.length === 1 ? "it isn't" : "they aren't"} on your list.`;
+  }
+
   for (const s of stores) {
     if (s.pricesNote) notes += `${notes ? " " : ""}${s.storeName}: ${s.pricesNote.replace(/\.$/, "")}. Chains price by region, so these usually match your store.`;
   }

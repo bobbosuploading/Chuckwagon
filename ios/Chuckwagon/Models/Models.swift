@@ -12,6 +12,8 @@ struct Store: Identifiable, Codable, Hashable {
     /// Some collectors (Walmart) store coordinates at the top level instead of in `geo`.
     var lat: Double?
     var lng: Double?
+    /// Shopper ZIPs the collector found this store near (within its search radius).
+    var areaZips: [String]?
     /// Set when this store shows a nearby store's deals (same chain and price region).
     var dealsFrom: String?
     /// Set when this store's everyday prices come from another store of the chain.
