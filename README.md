@@ -141,3 +141,17 @@ The **Deploy to Firebase** workflow writes these into `functions/.env` before de
 ## What's new list (TestFlight)
 
 `CHANGES.txt` lists what's new in each TestFlight build, newest first, in plain text ready to paste into TestFlight's "What to Test" box. Each time the build number in `ios/project.yml` goes up, add a `Build N` section at the top. The **Build iPhone app** workflow fails if the current build number has no section.
+
+## Sam's Club stock-up list (beta only)
+
+Sam's Club has no price feed. `.github/workflows/collect-sams.yml` runs once a month (the 12th)
+through an Apify scraper of samsclub.com search pages: about 320 bulk staples for about 30 cents,
+capped at 45 cents, which fits beside the H-E-B run in Apify's free $5. `functions/src/clubPrices.ts`
+works out each item's price per lb (or each, or per fl oz), asks Haiku which H-E-B / Kroger products
+are the same food, and saves the comparison to `clubLists/sams` for the app's "Stock-up trip" screen.
+Only items with a grocery price to compare are kept; an item is "worth the trip" at 10% cheaper or more.
+
+These are website prices, the same for every club. Manual runs default to a 20-item dry run.
+`REUSE_LAST=1` redoes the comparison on the last run's rows without scraping again.
+Like the H-E-B scraper, turn it off before a paid launch: set the repository variable
+`SAMS_PRICES_ENABLED` to `false`.

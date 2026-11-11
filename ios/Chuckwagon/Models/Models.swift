@@ -114,6 +114,59 @@ struct StockUp: Codable, Hashable {
     }
 }
 
+/// The monthly Sam's Club stock-up list, from Firestore `clubLists/sams`.
+struct ClubList: Codable {
+    var chain: String
+    var updatedAt: String?
+    var items: [Item]
+
+    var updatedDate: Date? {
+        guard let updatedAt else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: updatedAt)
+    }
+
+    struct Item: Codable, Identifiable, Hashable {
+        var id: String { name }
+        var name: String
+        var category: String
+        var price: Double
+        /// Price per lb, each, or per fl oz (see `unit`).
+        var unitPrice: Double
+        /// "lb", "ct" or "floz".
+        var unit: String
+        var keep: String?
+        var storage: String?
+        var compare: [Compare]
+        /// Percent cheaper than the best grocery price. Nil with nothing to compare.
+        var pctCheaper: Int?
+        var worthIt: Bool
+
+        struct Compare: Codable, Hashable {
+            var chain: String
+            var product: String
+            var unitPrice: Double
+        }
+
+        func unitLabel(_ price: Double) -> String {
+            switch unit {
+            case "lb": "\(price.dollars)/lb"
+            case "ct": "\(price.dollars) each"
+            default: "\(price.dollars)/fl oz"
+            }
+        }
+
+        var keepSymbol: String {
+            switch keep {
+            case "freezer": "snowflake"
+            case "fridge": "refrigerator"
+            default: "cabinet"
+            }
+        }
+    }
+}
+
 enum DealCategory: String, CaseIterable, Identifiable {
     case meat, seafood, produce, dairy, bakery, pantry, frozen, household
     var id: String { rawValue }

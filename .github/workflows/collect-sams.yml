@@ -1,0 +1,51 @@
+name: Collect Sam's Club stock-up list
+
+# Once a month (the 12th, 6:45 AM CT, the day after the H-E-B price run) through Apify's free plan.
+# About 30 cents a run. Needs the APIFY_TOKEN secret; skips itself until it exists.
+# Turn off before a paid launch by setting the repository variable SAMS_PRICES_ENABLED to false.
+on:
+  schedule:
+    - cron: "45 12 12 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show the prices, don't save them"
+        type: boolean
+        default: true
+      max_items:
+        description: "Products to fetch (20 costs about 4 cents; 320 is the full monthly run)"
+        default: "20"
+      terms:
+        description: "Only these searches, comma separated (blank = all staples)"
+        default: ""
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Write Firebase credentials
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Collect
+        run: node lib/cli-sams.js
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SAMS_PRICES_ENABLED: ${{ vars.SAMS_PRICES_ENABLED }}
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          MAX_ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_items || '' }}
+          TERMS: ${{ github.event_name == 'workflow_dispatch' && inputs.terms || '' }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
