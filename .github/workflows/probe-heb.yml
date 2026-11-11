@@ -1,29 +1,13 @@
 name: Probe H-E-B sources
 
-# TEMP on this branch: runs the Sam's Club collector as a small dry run.
+# Read-only research: checks which public sources list H-E-B weekly sale prices.
 on:
   workflow_dispatch: {}
 
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: functions
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-      - run: npm run build
-      - run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      - run: node lib/cli-sams.js
-        env:
-          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-          REUSE_LAST: "1"
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+      - run: scripts/probe-heb.sh

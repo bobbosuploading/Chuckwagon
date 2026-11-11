@@ -9,8 +9,10 @@ it goes up, add a new "Build N" section at the top of this list.
 Build 4 (0.1.0)
 ========================================
 - Scan a weekly ad: the scan button now does receipts and printed weekly ads. Switch to "Weekly ad" and snap one page at a time, with the dates the prices are good for. The deals show up on the home screen and in your plans until the ad ends. Try it with a store that has no deals in the app, like ALDI or a local grocer: pick "Another store" and we'll add it near your ZIP code. Coupons can't be scanned yet.
+- Stock-up trip: tap the box button at the top of the home screen for a list of bulk staples at Sam's Club that cost less per pound than H-E-B and Kroger, like bacon, butter, shredded cheese, oats and olive oil. It shows how much cheaper each one is and how to store it. Check off what you want and share the list. Prices are from the Sam's Club website and are updated about once a month.
 [Ad scans need a Firebase deploy of functions (new scanAdPhoto). Stores whose ad we
 already load automatically (Kroger, H-E-B, Walmart, Dollar General) refuse ad scans.]
+[Stock-up trip needs a Firebase deploy of firestore rules (clubLists is readable).]
 
 ========================================
 Build 3 (0.1.0)
