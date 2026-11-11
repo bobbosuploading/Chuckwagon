@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var showingSettings = false
     @State private var showingPlans = false
     @State private var showingReceipt = false
+    @State private var selectedDeal: Deal?
 
     private var myStores: [Store] {
         let near = prefs.nearby(stores)
@@ -76,6 +77,9 @@ struct HomeView: View {
                 if let store = currentStore {
                     HeadedToView(store: store, otherStores: myStores.filter { $0.id != store.id && $0.chain != store.chain })
                 }
+            }
+            .sheet(item: $selectedDeal) { deal in
+                DealDetailView(deal: deal, storeName: currentStore?.name)
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
             .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
@@ -170,7 +174,8 @@ struct HomeView: View {
                 Text("\(deals.count) deals on sale")
                     .font(Theme.body(.headline, weight: .bold))
                     .foregroundStyle(.white)
-                Text("Up to \(best)% off. Tap \"Headed to\" and we'll plan supper around them.")
+                // Ad deals like "Buy 2, get 1 free" have no percent off, so skip "Up to 0% off".
+                Text((best > 0 ? "Up to \(best)% off. " : "") + "Tap \"Headed to\" and we'll plan supper around them.")
                     .font(Theme.body(.caption))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -192,9 +197,16 @@ struct HomeView: View {
                     category = nil
                     stockUpOnly = false
                 }
-                chip("Stock up", symbol: "shippingbox.fill", selected: stockUpOnly) { stockUpOnly.toggle() }
+                // One chip at a time: "Stock up" looks across every aisle, so it clears the aisle.
+                chip("Stock up", symbol: "shippingbox.fill", selected: stockUpOnly) {
+                    stockUpOnly = true
+                    category = nil
+                }
                 ForEach(DealCategory.allCases) { c in
-                    chip(c.label, symbol: c.symbol, selected: category == c) { category = c }
+                    chip(c.label, symbol: c.symbol, selected: category == c && !stockUpOnly) {
+                        category = c
+                        stockUpOnly = false
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -237,8 +249,21 @@ struct HomeView: View {
                     .padding(.top, 40)
             }
         } else {
+            if stockUpOnly {
+                Label("\(visibleDeals.count) prices worth buying extra of, from every aisle. Tap STOCK UP on a deal for how much to buy and how to keep it.",
+                      systemImage: "shippingbox.fill")
+                    .font(Theme.body(.footnote))
+                    .foregroundStyle(Theme.ink.opacity(0.7))
+                    .padding(.horizontal, 20)
+            }
             LazyVGrid(columns: columns, spacing: 14) {
-                ForEach(visibleDeals) { DealCard(deal: $0) }
+                ForEach(visibleDeals) { deal in
+                    DealCard(deal: deal)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedDeal = deal }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Shows the full deal")
+                }
             }
             .padding(.horizontal, 20)
         }
