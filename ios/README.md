@@ -13,6 +13,25 @@ SwiftUI app (iOS 17+). The Xcode project is generated from `project.yml` with Xc
 
 The "Plan my meals" button needs the `planMealsForStore` function deployed (see the main README).
 
+## Share extension ("Share a deal")
+
+The **Chuckwagon** target embeds a share extension, **ChuckwagonShare** (`com.bobby.chuckwagon.share`),
+so shoppers can share a Facebook, TikTok or Reddit post, a web page or a screenshot to Chuckwagon.
+The extension only saves what was shared into the App Group `group.com.bobby.chuckwagon`; the app
+picks it up when it opens and finishes in the Share a deal screen (`Shared/ShareInbox.swift`).
+
+First archive after this was added (Mac, once):
+
+1. `cd ios && xcodegen && open Chuckwagon.xcodeproj`
+2. Target **ChuckwagonShare** > Signing & Capabilities > Team = your team (same as the app).
+3. On both **Chuckwagon** and **ChuckwagonShare**, check that App Groups shows `group.com.bobby.chuckwagon`
+   with a check mark. With automatic signing Xcode registers the group and the extension's App ID itself;
+   if it shows a red error, click "Try Again" or add the group in the developer website under
+   Identifiers > App Groups.
+4. Archive as usual. The extension ships inside the app; nothing extra to upload.
+
+The dev app has no share extension. Use the "Share a deal" button on its home screen instead.
+
 ## Dev app (test on your iPhone without touching TestFlight)
 
 There are two app targets built from the same code:

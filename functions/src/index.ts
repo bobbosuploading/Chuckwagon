@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import { scanReceipt } from "./receipts";
 import { AdScanError, scanAd } from "./adScans";
+import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
 
 initializeApp();
 
@@ -291,6 +292,90 @@ export const scanAdPhoto = onCall(
     }
   }
 );
+
+/** Shared deals cost about the same as an ad scan (one Haiku call). */
+const SHARE_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
+
+/**
+ * "Share a deal": a deal a shopper saw on social media, a deal site or in a message, shared as a
+ * screenshot, a link and/or text. It shows at that store (or every store of the chain) until it
+ * ends or shoppers say it's gone (see sharedDeals.ts).
+ * Data: { storeId, imageBase64?, mediaType?, url?, text? }.
+ */
+export const shareDealPost = onCall(
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to share deals");
+    const { storeId, imageBase64, mediaType, url, text } = (request.data ?? {}) as {
+      storeId?: string;
+      imageBase64?: string;
+      mediaType?: string;
+      url?: string;
+      text?: string;
+    };
+    if (!storeId || typeof storeId !== "string") throw new HttpsError("invalid-argument", "Pick the store the deal is at.");
+    if (!imageBase64 && !url && !text) throw new HttpsError("invalid-argument", "Share a screenshot, a link or the post's text.");
+    if (imageBase64 && (typeof imageBase64 !== "string" || imageBase64.length > 7_000_000)) {
+      throw new HttpsError("invalid-argument", "That picture is too large.");
+    }
+    const type = (["image/jpeg", "image/png", "image/webp"].includes(mediaType ?? "") ? mediaType : "image/jpeg") as
+      "image/jpeg" | "image/png" | "image/webp";
+
+    const db = getFirestore();
+    const uid = request.auth.uid;
+    const day = today();
+    const mine = db.collection("usage").doc(`${uid}_${day}`);
+    const everyone = db.collection("usage").doc(`all_${day}`);
+    await db.runTransaction(async (tx) => {
+      const [m, e] = await Promise.all([tx.get(mine), tx.get(everyone)]);
+      if (((m.get("shares") as number | undefined) ?? 0) >= SHARE_LIMITS.perUserPerDay) {
+        throw new HttpsError("resource-exhausted", `You've shared ${SHARE_LIMITS.perUserPerDay} deals today. Thanks! Try again tomorrow.`);
+      }
+      if (((e.get("shares") as number | undefined) ?? 0) >= SHARE_LIMITS.allUsersPerDay) {
+        throw new HttpsError("resource-exhausted", "Deal sharing is extra busy today. Please try again tomorrow.");
+      }
+      tx.set(mine, { uid, day, shares: FieldValue.increment(1) }, { merge: true });
+      tx.set(everyone, { day, shares: FieldValue.increment(1) }, { merge: true });
+    });
+
+    try {
+      const result = await shareDeal(
+        db,
+        new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }),
+        uid,
+        {
+          storeId,
+          imageBase64: imageBase64 || undefined,
+          mediaType: type,
+          url: typeof url === "string" ? url.slice(0, 2000) : undefined,
+          text: typeof text === "string" ? text : undefined,
+        },
+        day
+      );
+      logger.info("Deal shared", { uid, storeId, scope: result.scope, deals: result.deals.length });
+      return result;
+    } catch (err) {
+      logger.warn("Deal share failed", err);
+      if (err instanceof ShareError) throw new HttpsError("failed-precondition", err.message);
+      throw new HttpsError("internal", (err as Error).message);
+    }
+  }
+);
+
+/** "Still there" / "Gone" on a deal a shopper shared. Data: { id, vote: "here" | "gone" }. */
+export const voteSharedDealPost = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const { id, vote } = (request.data ?? {}) as { id?: string; vote?: string };
+  if (!id || !/^[a-f0-9]{24}$/.test(id) || (vote !== "here" && vote !== "gone")) {
+    throw new HttpsError("invalid-argument", "id and vote (here or gone) are required");
+  }
+  try {
+    return await voteSharedDeal(getFirestore(), request.auth.uid, id, vote, today());
+  } catch (err) {
+    if (err instanceof ShareError) throw new HttpsError("not-found", err.message);
+    throw err;
+  }
+});
 
 /**
  * Thanks shoppers for scanning: each new receipt or ad page (3+ prices, not scanned before) adds one

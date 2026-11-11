@@ -13,6 +13,7 @@ import type { Category } from "./config";
 import type { Deal } from "./collectKroger";
 import { StockUp, stockUpTip } from "./stockUp";
 import { MATCH_MODEL, priceRegularItems } from "./priceItems";
+import { liveSharedDeals } from "./sharedDeals";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -47,6 +48,9 @@ export const MAX_EXTRA_MEALS = 3;
 const MAX_TOTAL_MEALS = 10;
 
 /** How many of the best deals per category to send to the model. Household goods aren't meal ingredients. */
+/** Most deals shared from social media to put in one plan (they can sell out). */
+const MAX_SHARED_DEALS = 8;
+
 const DEALS_PER_CATEGORY: Partial<Record<Category, number>> = {
   meat: 40,
   seafood: 15,
@@ -354,6 +358,7 @@ export async function planMeals(
   const model = modelOverride || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
   const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
   const storeNames = new Map<string, string>();
+  const storeChains = new Map<string, string>();
   // Stores in a price region share one store's deals (see regions.ts): dealsFrom says whose.
   const dealSource = new Map<string, string>();
   const pricesNotes = new Map<string, string>();
@@ -361,6 +366,7 @@ export async function planMeals(
     const doc = await db.doc(`stores/${id}`).get();
     if (!doc.exists) throw new Error(`Unknown store ${id}`);
     storeNames.set(id, doc.get("name"));
+    storeChains.set(id, String(doc.get("chain") ?? ""));
     dealSource.set(id, (doc.get("dealsFrom") as string | undefined) ?? id);
     const note = doc.get("pricesNote") as string | undefined;
     if (note) pricesNotes.set(id, note);
@@ -398,6 +404,19 @@ export async function planMeals(
         dealDocIds.set(key, doc.id);
       });
     }
+  }
+  // Deals shoppers shared from social media for these stores (sharedDeals.ts), a few each.
+  for (const id of storeIds) {
+    const shared = await liveSharedDeals(db, id, storeChains.get(id) ?? "", today);
+    shared
+      .sort((a, b) => b.pctOff - a.pctOff)
+      .slice(0, Math.ceil(MAX_SHARED_DEALS / storeIds.length))
+      .forEach((d) => {
+        const key = `d${deals.size + 1}`;
+        const { sharedId, ...deal } = d;
+        deals.set(key, deal);
+        dealDocIds.set(key, `shared_${sharedId}`);
+      });
   }
   if (deals.size === 0) throw new Error(`No current deals for ${storeIds.join(", ")}`);
 

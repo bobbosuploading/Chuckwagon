@@ -18,10 +18,6 @@ targetTemplates:
   ChuckwagonApp:
     type: application
     platform: iOS
-    entitlements:
-      path: Chuckwagon/Chuckwagon.entitlements
-      properties:
-        com.apple.developer.applesignin: [Default]
     settings:
       base:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -44,6 +40,15 @@ targets:
     templates: [ChuckwagonApp]
     sources:
       - Chuckwagon
+      - Shared
+    # The App Group lets the share extension hand shared deals to the app (ShareInbox).
+    entitlements:
+      path: Chuckwagon/Chuckwagon.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.security.application-groups: [group.com.bobby.chuckwagon]
+    dependencies:
+      - target: ChuckwagonShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon
@@ -61,6 +66,12 @@ targets:
         excludes:
           - GoogleService-Info.plist
       - Dev
+      - Shared
+    # No App Group or share extension: the dev app shares deals from inside the app only.
+    entitlements:
+      path: Dev/ChuckwagonDev.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon.dev
@@ -68,3 +79,36 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEV_BUILD
     scheme: {}
+
+  # "Chuckwagon" in the share sheet: saves a post shared from Facebook, TikTok, Safari or Photos
+  # for the app to finish (ios/Shared/ShareInbox.swift). Embedded in the Chuckwagon app only.
+  ChuckwagonShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ShareExtension
+      - Shared
+    entitlements:
+      path: ShareExtension/ChuckwagonShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.bobby.chuckwagon]
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Chuckwagon
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon.share
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES

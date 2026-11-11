@@ -213,21 +213,78 @@ enum Backend {
         return try JSONDecoder().decode(AdScan.self, from: json)
     }
 
+    /// Deals shoppers shared from social media for a store: its own, plus ones for every store
+    /// of the chain. Hides ended deals and ones shoppers said are gone. Newest first.
+    static func sharedDeals(store: Store) async throws -> [SharedDeal] {
+        guard let storeId = store.id else { return [] }
+        let key = SharedDeal.chainKey(store.chain)
+        async let mine = db.collection("sharedDeals")
+            .whereField("storeId", isEqualTo: storeId)
+            .whereField("status", isEqualTo: "active")
+            .getDocuments()
+        async let chainWide = db.collection("sharedDeals")
+            .whereField("chainKey", isEqualTo: key)
+            .whereField("scope", isEqualTo: "chain")
+            .whereField("status", isEqualTo: "active")
+            .getDocuments()
+        let today = Date.now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+        var seen = Set<String>()
+        let docs = try await mine.documents + chainWide.documents
+        return docs
+            .compactMap { try? $0.data(as: SharedDeal.self) }
+            .filter { $0.validTo >= today && seen.insert($0.id ?? "").inserted }
+            .sorted { ($0.updatedAt?.dateValue() ?? .distantPast) > ($1.updatedAt?.dateValue() ?? .distantPast) }
+    }
+
+    /// What sharing a deal added.
+    struct ShareResult: Decodable {
+        struct Deal: Decodable, Hashable {
+            var id: String
+            var name: String
+            var brand: String?
+            var size: String?
+            var soldBy: String
+            var salePrice: Double?
+            var regularPrice: Double?
+            var promo: String?
+            /// True when another shopper already shared it (this counts as "still there").
+            var alreadyShared: Bool
+        }
+        var storeId: String
+        var storeName: String
+        /// "one-store" or "chain".
+        var scope: String
+        var clearance: Bool
+        var validTo: String
+        var endDateFromPost: Bool
+        var deals: [Deal]
+    }
+
+    /// Shares a deal from social media: a screenshot, a link and/or the post's text.
+    static func shareDeal(storeId: String, image: UIImage?, url: String?, text: String?) async throws -> ShareResult {
+        var data: [String: Any] = ["storeId": storeId]
+        if let image {
+            guard let jpeg = image.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) else {
+                throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that picture."])
+            }
+            data["imageBase64"] = jpeg.base64EncodedString()
+            data["mediaType"] = "image/jpeg"
+        }
+        if let url, !url.isEmpty { data["url"] = url }
+        if let text, !text.isEmpty { data["text"] = text }
+        let result = try await Functions.functions().httpsCallable("shareDealPost").call(data)
+        let json = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(ShareResult.self, from: json)
+    }
+
+    /// "Still there" (here = true) or "Gone" on a shared deal.
+    static func voteSharedDeal(id: String, stillThere: Bool) async throws {
+        _ = try await Functions.functions().httpsCallable("voteSharedDealPost")
+            .call(["id": id, "vote": stillThere ? "here" : "gone"])
+    }
+
     private static func decodePlan(_ object: Any) throws -> MealPlan {
         let data = try JSONSerialization.data(withJSONObject: object)
         return try JSONDecoder().decode(MealPlan.self, from: data)
-    }
-}
-
-extension UIImage {
-    /// A copy no larger than `maxSide` points on its longest side (receipts stay readable at 2000).
-    func scaledForUpload(maxSide: CGFloat) -> UIImage {
-        let longest = max(size.width, size.height)
-        guard longest > maxSide else { return self }
-        let scale = maxSide / longest
-        let target = CGSize(width: size.width * scale, height: size.height * scale)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        return UIGraphicsImageRenderer(size: target, format: format).image { _ in draw(in: CGRect(origin: .zero, size: target)) }
     }
 }

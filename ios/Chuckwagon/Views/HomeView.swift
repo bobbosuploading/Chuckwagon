@@ -18,6 +18,16 @@ struct HomeView: View {
     @State private var showingReceipt = false
     @State private var showingStockUpTrip = false
     @State private var selectedDeal: Deal?
+    @State private var sharedDeals: [SharedDeal] = []
+    @State private var showingShare = false
+    /// A deal shared from another app, waiting to be finished (ShareInbox).
+    @State private var inboxShare: InboxShare?
+
+    struct InboxShare: Identifiable {
+        var item: ShareInbox.Item
+        var image: UIImage?
+        var id: String { item.id }
+    }
 
     private var myStores: [Store] {
         let near = prefs.nearby(stores)
@@ -26,6 +36,14 @@ struct HomeView: View {
     }
 
     private var currentStore: Store? { stores.first { $0.id == storeId } }
+
+    private var visibleShared: [SharedDeal] {
+        guard !stockUpOnly else { return [] }
+        var shown = sharedDeals
+        if let category { shown = shown.filter { $0.category == category.rawValue } }
+        if !search.isEmpty { shown = shown.filter { $0.name.localizedCaseInsensitiveContains(search) } }
+        return shown
+    }
 
     private var visibleDeals: [Deal] {
         var shown = stockUpOnly ? deals.filter { $0.stockUp != nil } : deals
@@ -84,6 +102,12 @@ struct HomeView: View {
                 DealDetailView(deal: deal, storeName: currentStore?.name)
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
+            .sheet(isPresented: $showingShare, onDismiss: { Task { await loadShared() } }) {
+                ShareDealView(store: currentStore, myStores: myStores) { storeId = $0 }
+            }
+            .sheet(item: $inboxShare, onDismiss: { Task { await loadShared(); checkInbox() } }) { share in
+                ShareDealView(store: currentStore, myStores: myStores, shared: (share.item, share.image)) { storeId = $0 }
+            }
             .sheet(isPresented: $showingStockUpTrip) { StockUpTripView() }
             .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
                 ReceiptScanView(store: currentStore, myStores: myStores) { added in
@@ -109,12 +133,24 @@ struct HomeView: View {
                     return
                 }
                 await loadStores()
+                checkInbox()
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await loadStores() } }
+                if phase == .active {
+                    Task {
+                        await loadStores()
+                        checkInbox()
+                    }
+                }
             }
             .task(id: "\(currentStore?.dealsStoreId ?? "")|\(category?.rawValue ?? "all")") { await load() }
         }
+    }
+
+    /// Opens a deal shared from another app, once the stores are loaded.
+    private func checkInbox() {
+        guard inboxShare == nil, !showingShare, !myStores.isEmpty, let next = ShareInbox.next() else { return }
+        inboxShare = InboxShare(item: next.item, image: next.image)
     }
 
     /// Reload the store list. Runs at launch, after Settings closes and when the app comes back
@@ -232,6 +268,7 @@ struct HomeView: View {
     // MARK: Deals
 
     @ViewBuilder private var content: some View {
+        if !stockUpOnly && storeId != nil { sharedSection }
         if loading && deals.isEmpty {
             ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
         } else if let error {
@@ -272,6 +309,53 @@ struct HomeView: View {
         }
     }
 
+    // MARK: Shared by shoppers
+
+    @ViewBuilder private var sharedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Spotted by shoppers")
+                    .font(Theme.body(.headline, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Button { showingShare = true } label: { Label("Share a deal", systemImage: "megaphone.fill") }
+                    .font(Theme.body(.subheadline, weight: .semibold))
+            }
+            .padding(.horizontal, 20)
+            if visibleShared.isEmpty {
+                Text("Saw a grocery deal on Facebook, TikTok or Reddit? Tap Share a deal, or share the post to Chuckwagon from that app.")
+                    .font(Theme.body(.footnote))
+                    .foregroundStyle(Theme.ink.opacity(0.65))
+                    .padding(.horizontal, 20)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(visibleShared) { deal in
+                            SharedDealCard(deal: deal) { stillThere in Task { await vote(deal, stillThere: stillThere) } }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private func loadShared() async {
+        guard let store = currentStore else { sharedDeals = []; return }
+        sharedDeals = (try? await Backend.sharedDeals(store: store)) ?? []
+    }
+
+    private func vote(_ deal: SharedDeal, stillThere: Bool) async {
+        guard let id = deal.id else { return }
+        do {
+            try await Backend.voteSharedDeal(id: id, stillThere: stillThere)
+            await loadShared()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     private func load() async {
         // Stores in a price region show the deals of the store they share with.
         guard let storeId = currentStore?.dealsStoreId else { return }
@@ -280,6 +364,7 @@ struct HomeView: View {
         defer { loading = false }
         do {
             deals = try await Backend.deals(storeId: storeId, category: category)
+            await loadShared()
         } catch {
             self.error = error.localizedDescription
         }
