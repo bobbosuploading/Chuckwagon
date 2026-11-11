@@ -46,6 +46,7 @@ jobs:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           HEB_PRICES_ENABLED: ${{ vars.HEB_PRICES_ENABLED }}
           HOME_ZIP: "77437"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
           FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '1' || '0' }}
           MAX_ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_items || '' }}
