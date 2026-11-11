@@ -1,13 +1,26 @@
 name: Probe H-E-B sources
 
-# Read-only research: checks which public sources list H-E-B weekly sale prices.
+# TEMP on this branch: runs the Sam's Club collector as a small dry run.
 on:
   workflow_dispatch: {}
 
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: functions
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/probe-heb.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: node lib/cli-sams.js
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          DRY_RUN: "1"
+          MAX_ITEMS: "24"
+          TERMS: "chicken breast,rice,butter"
