@@ -6,19 +6,6 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
-Build 4 (0.1.0)
-========================================
-[Needs the backend deployed (Deploy to Firebase) before testers get this build.]
-
-What's new since build 3:
-
-- Meal ideas to pick from: every plan now comes with 2 extra meal ideas. On the Meals tab, tap the circles to swap a meal you don't like for one of the extras, or add one. The grocery list and total update right away, and it doesn't use up a plan.
-- Sale prices on receipts: when you scan a receipt, items bought on sale or with a coupon get a red SALE tag with the regular price. Sale prices no longer count as a store's everyday price.
-- Store distance: in Settings, under "Your stores", pick how far to look for stores (10, 20, 30 or 50 miles). It starts at 30.
-
-Please try: making a plan, then swapping one meal on the Meals tab and checking that the grocery list changes to match. Also try switching store distance to 50 miles and checking that farther stores show up, and scan a receipt with a sale item on it.
-
-========================================
 Build 3 (0.1.0)
 ========================================
 [App Check is only in this build if PR #10 is merged before the build is made.
@@ -34,8 +21,11 @@ What's new since the first build:
 - Send to cart: Kroger adds items straight to your cart, Walmart gets an add-to-cart link, and H-E-B and the other stores get "Share list" (sorted by aisle) to Reminders, Notes or Messages.
 - More stores and prices: Walmart, ALDI and Dollar General ads, plus everyday prices. All 31 H-E-B ad deals now show, tagged "DEAL" where no regular price is listed.
 - Receipt rewards: each scanned receipt earns an extra plan, and 3 receipts earn a Chef's pick.
+- Meal ideas to pick from: every plan now comes with 2 extra meal ideas. On the Meals tab, tap the circles to swap a meal you don't like for one of the extras, or add one. The grocery list and total update right away, and it doesn't use up a plan.
+- Sale prices on receipts: when you scan a receipt, items bought on sale or with a coupon get a red SALE tag with the regular price. Sale prices no longer count as a store's everyday price.
+- Store distance: in Settings, under "Your stores", pick how far to look for stores (10, 20, 30 or 50 miles). It starts at 30.
 
-Please try: setting your ZIP, making a plan with a budget, and sending a list to your store. Tell us about anything that looks wrong or confusing.
+Please try: setting your ZIP, making a plan with a budget, swapping a meal on the Meals tab, scanning a receipt, and sending a list to your store. Tell us about anything that looks wrong or confusing.
 
 ========================================
 Build 2 (0.1.0)
