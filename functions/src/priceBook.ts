@@ -23,7 +23,7 @@ export interface PriceBookItem {
   salePrice?: number | null;
   soldBy: "UNIT" | "WEIGHT";
   category: Category | null;
-  source: "kroger-api" | "receipt" | "heb-apify";
+  source: "kroger-api" | "receipt" | "heb-apify" | "sams-apify";
   /** ISO date the price was seen. */
   seenAt: string;
 }

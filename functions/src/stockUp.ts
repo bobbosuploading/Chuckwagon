@@ -104,6 +104,12 @@ export function promoPctOff(promo?: string | null): { pct: number; reason: strin
   return null;
 }
 
+/** How an item keeps (freezer, pantry, fridge) and how to store it, whatever its price. */
+export function keepRule(name: string, category: Category): { keep: StockUp["keep"]; storage: string } | null {
+  const rule = RULES.find((r) => (!r.categories || r.categories.includes(category)) && r.match.test(name));
+  return rule ? { keep: rule.keep, storage: rule.storage } : null;
+}
+
 const GOOD_PCT = 30;
 const GREAT_PCT = 45;
 const SHORT_PCT = 40;
