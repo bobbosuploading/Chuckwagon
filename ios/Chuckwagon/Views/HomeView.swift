@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var showingSettings = false
     @State private var showingPlans = false
     @State private var showingReceipt = false
+    @State private var selectedDeal: Deal?
 
     private var myStores: [Store] {
         let near = prefs.nearby(stores)
@@ -77,6 +78,9 @@ struct HomeView: View {
                 if let store = currentStore {
                     HeadedToView(store: store, otherStores: myStores.filter { $0.id != store.id && $0.chain != store.chain })
                 }
+            }
+            .sheet(item: $selectedDeal) { deal in
+                DealDetailView(deal: deal, storeName: currentStore?.name)
             }
             .sheet(isPresented: $showingPlans) { MyPlansView() }
             .sheet(isPresented: $showingReceipt) {
@@ -165,7 +169,8 @@ struct HomeView: View {
                 Text("\(deals.count) deals on sale")
                     .font(Theme.body(.headline, weight: .bold))
                     .foregroundStyle(.white)
-                Text("Up to \(best)% off. Tap \"Headed to\" and we'll plan supper around them.")
+                // Ad deals like "Buy 2, get 1 free" have no percent off, so skip "Up to 0% off".
+                Text((best > 0 ? "Up to \(best)% off. " : "") + "Tap \"Headed to\" and we'll plan supper around them.")
                     .font(Theme.body(.caption))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -233,7 +238,13 @@ struct HomeView: View {
             }
         } else {
             LazyVGrid(columns: columns, spacing: 14) {
-                ForEach(visibleDeals) { DealCard(deal: $0) }
+                ForEach(visibleDeals) { deal in
+                    DealCard(deal: deal)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedDeal = deal }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Shows the full deal")
+                }
             }
             .padding(.horizontal, 20)
         }
