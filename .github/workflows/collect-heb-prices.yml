@@ -15,6 +15,10 @@ on:
       max_items:
         description: "Products to fetch (20 costs about 14 cents; 711 is the full monthly run)"
         default: "20"
+      force:
+        description: "Run even if this month's prices were already saved (uses more Apify credit)"
+        type: boolean
+        default: false
 
 jobs:
   collect:
@@ -43,5 +47,6 @@ jobs:
           HEB_PRICES_ENABLED: ${{ vars.HEB_PRICES_ENABLED }}
           HOME_ZIP: "77437"
           DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '1' || '0' }}
           MAX_ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_items || '' }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json

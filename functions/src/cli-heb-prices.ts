@@ -6,6 +6,7 @@
  */
 import { appendFileSync } from "node:fs";
 import { initializeApp } from "firebase-admin/app";
+import { savedRunWithin } from "./apifyBudget";
 import { collectHebPrices } from "./hebPrices";
 
 async function main() {
@@ -21,7 +22,14 @@ async function main() {
   const zip = process.env.HOME_ZIP || "77437";
   const dryRun = process.env.DRY_RUN === "1";
   const maxItems = process.env.MAX_ITEMS ? Number(process.env.MAX_ITEMS) : undefined;
-  if (!dryRun) initializeApp();
+  if (!dryRun) {
+    initializeApp();
+    const last = process.env.FORCE === "1" ? null : await savedRunWithin("heb-prices");
+    if (last) {
+      console.log(`H-E-B prices were already saved on ${last.toISOString().slice(0, 10)}; skipping so the month stays inside Apify's free plan. Run by hand with "force" to run anyway.`);
+      return;
+    }
+  }
   const { summary, items } = await collectHebPrices(token, zip, { dryRun, maxItems });
   const lines = [
     `H-E-B prices near ${zip}: ${summary.prices} products from ${summary.rows} rows at ${summary.store ?? "?"}${dryRun ? " (dry run, not saved)" : ""}`,

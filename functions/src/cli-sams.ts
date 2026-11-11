@@ -9,6 +9,7 @@
 import { appendFileSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { initializeApp } from "firebase-admin/app";
+import { savedRunWithin } from "./apifyBudget";
 import { collectSamsClub } from "./clubPrices";
 
 async function main() {
@@ -24,12 +25,20 @@ async function main() {
   const dryRun = process.env.DRY_RUN === "1";
   const maxItems = process.env.MAX_ITEMS ? Number(process.env.MAX_ITEMS) : undefined;
   const terms = process.env.TERMS ? process.env.TERMS.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-  if (!dryRun) initializeApp();
+  const reuseLast = process.env.REUSE_LAST === "1";
+  if (!dryRun) {
+    initializeApp();
+    const last = process.env.FORCE === "1" || reuseLast ? null : await savedRunWithin("sams-club");
+    if (last) {
+      console.log(`The Sam's Club list was already saved on ${last.toISOString().slice(0, 10)}; skipping so the month stays inside Apify's free plan. Run by hand with "force" to run anyway.`);
+      return;
+    }
+  }
   const { summary, items, rows } = await collectSamsClub(token, dryRun ? null : new Anthropic(), {
     dryRun,
     maxItems,
     terms,
-    reuseLast: process.env.REUSE_LAST === "1",
+    reuseLast,
   });
   const per = (u: string) => (u === "lb" ? "/lb" : u === "ct" ? " each" : "/fl oz");
   const lines = [
