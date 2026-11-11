@@ -14,7 +14,12 @@ import { Firestore, getFirestore } from "firebase-admin/firestore";
 import type { Deal } from "./collectKroger";
 import { withStockUp } from "./stockUp";
 import type { Category } from "./config";
-import { fitToDoc, PriceBookItem, words } from "./priceBook";
+import Anthropic from "@anthropic-ai/sdk";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { z } from "zod";
+import { bookUnitPrice } from "./clubPrices";
+import { fitToDoc, PriceBookItem, shortlist, words } from "./priceBook";
+import { MATCH_MODEL } from "./priceItems";
 
 const ACTOR = "zaiq~heb-scraper";
 const API = "https://api.apify.com/v2";
@@ -160,17 +165,35 @@ export async function collectHebPrices(token: string, zip: string, opts: { dryRu
   return { summary, items };
 }
 
-/** Ad deal names that are too vague to match one product ("Assorted varieties"). */
-const MAX_EXTRA_WORDS = 4;
 const MAX_PCT = 70;
+
+const MatchSchema = z.object({
+  picks: z.array(
+    z.object({
+      item: z.number().int().describe("The AD ITEM number"),
+      same: z.array(z.string()).describe("Letters of the shelf products that are the advertised product"),
+    })
+  ),
+});
+
+const MATCH_SYSTEM = `You match grocery weekly-ad items to the same store's shelf products, so the regular price can be shown next to the sale price.
+For each AD ITEM, list the letters of the shelf products that ARE the advertised product: the same food, same brand or tier
+when the ad names one, same form (raw vs cooked, boneless vs bone-in, plain vs seasoned or breaded, fresh vs frozen).
+An ad may cover several products ("drumsticks or thighs"); a product matching any one of them counts.
+For items sold "each", the package size must also match what the ad says, when the ad gives a size.
+Never match a different food that shares a word. Return an empty list when unsure.`;
 
 /**
  * The H-E-B weekly ad gives a sale price but rarely the regular price, so most ad items
- * show no savings. Fill regularPrice, savings and pctOff from priceBooks/heb-{zip} when a
- * product clearly matches: every word of the ad name is in the product name, the product
- * name has few extra words, and both are sold the same way (each or per lb). When several
- * products match, the lowest regular price above the sale price is used, so savings are
- * never overstated. Deals that already have a regular price are left alone.
+ * show no savings. Fills regularPrice, savings and pctOff from priceBooks/heb-{zip}.
+ *
+ * A word shortlist finds candidate shelf products, and one small Haiku call says which are
+ * really the advertised product (word matching alone found almost nothing: ad names are short
+ * and often cover two products). Per-lb ad items compare with shelf prices per lb, worked out
+ * from the pack weight when the shelf price is for a pack ("Avg. 3.1 lbs"). When several
+ * products match, the lowest regular price above the sale price is used, so savings are never
+ * overstated. Deals that already have a regular price are left alone.
+ * Without ANTHROPIC_API_KEY nothing is matched.
  */
 export async function enrichHebDeals(
   db: Firestore,
@@ -179,33 +202,73 @@ export async function enrichHebDeals(
 ): Promise<{ checked: number; enriched: number }> {
   const book = ((await db.doc(`priceBooks/${bookId}`).get()).get("items") as PriceBookItem[] | undefined) ?? [];
   const deals = await db.collection("deals").where("storeId", "==", storeId).get();
-  if (book.length === 0) return { checked: deals.size, enriched: 0 };
-  const bookWords = book.map((p) => ({ p, w: new Set(words(p.name)) }));
-  const writer = db.bulkWriter();
-  let enriched = 0;
+  if (book.length === 0 || !process.env.ANTHROPIC_API_KEY) return { checked: deals.size, enriched: 0 };
+
+  type Cand = { p: PriceBookItem; regular: number };
+  const letters = "abcdefghij";
+  const lines: string[] = [];
+  const options: { doc: (typeof deals.docs)[number]; sale: number; cands: Cand[] }[] = [];
   for (const doc of deals.docs) {
     const d = doc.data();
     const sale = d.salePrice as number | null;
-    if (d.regularPrice != null || !(sale && sale > 0)) continue;
-    const want = words(d.name as string);
-    if (want.length === 0) continue;
-    let best: number | null = null;
-    for (const { p, w } of bookWords) {
-      if (p.soldBy !== d.soldBy || p.price <= sale) continue;
-      if (!want.every((x) => w.has(x)) || w.size - want.length > MAX_EXTRA_WORDS) continue;
-      if (best === null || p.price < best) best = p.price;
+    if (d.regularPrice != null || !(sale && sale > 0) || d.category === "household") continue;
+    const perLb = d.soldBy === "WEIGHT";
+    const cands: Cand[] = [];
+    for (const p of shortlist(d.name as string, book, 25)) {
+      let regular: number | null = null;
+      if (perLb) {
+        const u = bookUnitPrice(p);
+        if (u?.unit === "lb") regular = u.unitPrice;
+      } else if (p.soldBy === "UNIT") {
+        regular = p.price;
+      }
+      if (regular === null || regular <= sale || cands.length >= letters.length) continue;
+      cands.push({ p, regular });
     }
-    if (best === null) continue;
-    const regularPrice = Math.round(best * 100) / 100;
-    const pctOff = Math.round(((regularPrice - sale) / regularPrice) * 100);
+    if (!cands.length) continue;
+    options.push({ doc, sale, cands });
+    lines.push(`AD ITEM ${options.length}: ${d.name}${d.size ? ` | ${d.size}` : ""} | sold ${perLb ? "per lb" : "each"}`);
+    cands.forEach((c, j) => lines.push(`  ${letters[j]}) ${c.p.name}${c.p.size ? ` | ${c.p.size}` : ""}`));
+  }
+  if (!options.length) return { checked: deals.size, enriched: 0 };
+
+  let picks: z.infer<typeof MatchSchema>["picks"] = [];
+  try {
+    const response = await new Anthropic().beta.messages.parse({
+      model: MATCH_MODEL,
+      max_tokens: 8000,
+      output_config: { format: betaZodOutputFormat(MatchSchema) },
+      system: MATCH_SYSTEM,
+      messages: [{ role: "user", content: lines.join("\n") }],
+    });
+    picks = response.parsed_output?.picks ?? [];
+  } catch (err) {
+    console.warn(`Matching H-E-B ad items to shelf prices failed: ${(err as Error).message}`);
+    return { checked: deals.size, enriched: 0 };
+  }
+
+  const writer = db.bulkWriter();
+  let enriched = 0;
+  for (const pick of picks) {
+    const opt = options[pick.item - 1];
+    if (!opt) continue;
+    const matched = pick.same
+      .map((l) => opt.cands[letters.indexOf(l.trim().toLowerCase())])
+      .filter((c): c is Cand => !!c);
+    if (!matched.length) continue;
+    const best = matched.reduce((a, b) => (b.regular < a.regular ? b : a));
+    const regularPrice = Math.round(best.regular * 100) / 100;
+    const pctOff = Math.round(((regularPrice - opt.sale) / regularPrice) * 100);
     if (pctOff < 1 || pctOff > MAX_PCT) continue;
     const update = {
       regularPrice,
-      savings: Math.round((regularPrice - sale) * 100) / 100,
+      savings: Math.round((regularPrice - opt.sale) * 100) / 100,
       pctOff,
       regularPriceSource: "heb-apify",
+      regularPriceFrom: best.p.name,
     };
-    writer.update(doc.ref, { ...update, stockUp: withStockUp({ ...(d as Deal), ...update }).stockUp });
+    writer.update(opt.doc.ref, { ...update, stockUp: withStockUp({ ...(opt.doc.data() as Deal), ...update }).stockUp });
+    console.log(`  regular price: ${opt.doc.get("name")} $${opt.sale} -> was $${regularPrice} (${pctOff}% off) from "${best.p.name}"`);
     enriched++;
   }
   await writer.close();
