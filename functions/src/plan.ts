@@ -375,6 +375,7 @@ export async function planMeals(
   const deals = new Map<string, Deal>(); // short id -> deal (storeId = the shopper's store)
   const dealDocIds = new Map<string, string>(); // short id -> Firestore deals/{id}
   const loadedSources = new Set<string>();
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   for (const id of storeIds) {
     // Two chosen stores in the same region have the same deals; load them once.
     const source = dealSource.get(id)!;
@@ -389,6 +390,9 @@ export async function planMeals(
         .limit(Math.ceil(limit! / storeIds.length))
         .get();
       snap.forEach((doc) => {
+        // Deals from shoppers' ad photos stay saved until the next scan clears them; skip ended ones.
+        const validTo = doc.get("validTo") as string | undefined;
+        if (validTo && validTo.slice(0, 10) < today) return;
         const key = `d${deals.size + 1}`;
         deals.set(key, { ...(doc.data() as Deal), storeId: id });
         dealDocIds.set(key, doc.id);

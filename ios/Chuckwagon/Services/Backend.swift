@@ -55,7 +55,10 @@ enum Backend {
             query = query.whereField("category", isEqualTo: category.rawValue)
         }
         let snap = try await query.order(by: "pctOff", descending: true).limit(to: 200).getDocuments()
+        // Deals from shoppers' ad photos can outlast their ad until the next scan clears them.
+        let today = Date.now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
         return snap.documents.compactMap { try? $0.data(as: Deal.self) }
+            .filter { ($0.validTo.map { String($0.prefix(10)) } ?? today) >= today }
     }
 
     /// "Headed to [store]": asks the backend for meals and a grocery list.
@@ -160,6 +163,47 @@ enum Backend {
             .call(["storeId": storeId, "imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"])
         let data = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(ReceiptScan.self, from: data)
+    }
+
+    /// What a weekly ad scan read. Prices are per item, or per lb when soldBy is "WEIGHT".
+    struct AdScan: Decodable {
+        struct Deal: Decodable, Hashable {
+            var name: String
+            var brand: String?
+            var size: String?
+            var soldBy: String
+            var salePrice: Double?
+            var regularPrice: Double?
+            var promo: String?
+            /// How many shoppers' scans showed this same deal.
+            var confirmations: Int
+        }
+        var storeId: String
+        var storeName: String
+        /// True when this scan added the store.
+        var newStore: Bool
+        var validFrom: String?
+        var validTo: String
+        var deals: [Deal]
+        var reward: ReceiptScan.Reward?
+    }
+
+    /// Sends one page of a printed weekly ad. Pass a store, or nil to add the store named on
+    /// the ad near the shopper's ZIP.
+    static func scanAd(storeId: String?, zip: String, latitude: Double, longitude: Double, image: UIImage) async throws -> AdScan {
+        guard let jpeg = image.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) else {
+            throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
+        }
+        var data: [String: Any] = ["imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"]
+        if let storeId {
+            data["storeId"] = storeId
+        } else {
+            data["zip"] = zip
+            if latitude != 0 { data["lat"] = latitude; data["lng"] = longitude }
+        }
+        let result = try await Functions.functions().httpsCallable("scanAdPhoto").call(data)
+        let json = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(AdScan.self, from: json)
     }
 
     private static func decodePlan(_ object: Any) throws -> MealPlan {
