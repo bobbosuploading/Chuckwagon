@@ -73,6 +73,14 @@ struct Deal: Identifiable, Codable, Hashable {
     var promo: String?
     /// Set when the price is low enough to buy extra and the item keeps.
     var stockUp: StockUp?
+    /// When the sale ends (ISO date), if known.
+    var validTo: String?
+    /// Where the deal came from; "shopper-ad" when read from a shopper's photo of a printed ad.
+    var source: String?
+    /// For shopper-ad deals: how many shoppers' scans showed it.
+    var confirmations: Int?
+
+    var fromShopperPhoto: Bool { source == "shopper-ad" }
 
     var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
 }

@@ -6,6 +6,7 @@ import * as logger from "firebase-functions/logger";
 import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import { scanReceipt } from "./receipts";
+import { AdScanError, scanAd } from "./adScans";
 
 initializeApp();
 
@@ -230,8 +231,69 @@ export const scanReceiptPhoto = onCall(
   }
 );
 
+/** Ad scans cost about the same as receipts. A shopper rarely has more than a few ad pages. */
+const AD_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
+
 /**
- * Thanks shoppers for scanning: each new receipt (3+ prices, not scanned before) adds one
+ * "Scan a weekly ad": reads one page of a printed weekly ad and saves its deals, for stores
+ * whose ad we can't load automatically (see adScans.ts).
+ * Data: { storeId } for one of the shopper's stores, or { zip, lat?, lng? } for a store we
+ * don't have yet (named from the ad); plus { imageBase64, mediaType }.
+ */
+export const scanAdPhoto = onCall(
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan ads");
+    const { storeId, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
+      storeId?: string;
+      zip?: string;
+      lat?: number;
+      lng?: number;
+      imageBase64?: string;
+      mediaType?: string;
+    };
+    if ((!storeId && !zip) || !imageBase64) throw new HttpsError("invalid-argument", "storeId or zip, and imageBase64, are required");
+    if (imageBase64.length > 7_000_000) throw new HttpsError("invalid-argument", "That photo is too large.");
+    const type = (["image/jpeg", "image/png", "image/webp"].includes(mediaType ?? "") ? mediaType : "image/jpeg") as
+      "image/jpeg" | "image/png" | "image/webp";
+
+    const db = getFirestore();
+    const uid = request.auth.uid;
+    const day = today();
+    const mine = db.collection("usage").doc(`${uid}_${day}`);
+    const everyone = db.collection("usage").doc(`all_${day}`);
+    await db.runTransaction(async (tx) => {
+      const [m, e] = await Promise.all([tx.get(mine), tx.get(everyone)]);
+      if (((m.get("adScans") as number | undefined) ?? 0) >= AD_LIMITS.perUserPerDay) {
+        throw new HttpsError("resource-exhausted", `You've scanned ${AD_LIMITS.perUserPerDay} ad pages today. Thanks! Try again tomorrow.`);
+      }
+      if (((e.get("adScans") as number | undefined) ?? 0) >= AD_LIMITS.allUsersPerDay) {
+        throw new HttpsError("resource-exhausted", "Ad scanning is extra busy today. Please try again tomorrow.");
+      }
+      tx.set(mine, { uid, day, adScans: FieldValue.increment(1) }, { merge: true });
+      tx.set(everyone, { day, adScans: FieldValue.increment(1) }, { merge: true });
+    });
+
+    try {
+      const where = {
+        storeId: storeId || undefined,
+        zip: zip ? String(zip).trim() : undefined,
+        lat: typeof lat === "number" && Number.isFinite(lat) ? lat : undefined,
+        lng: typeof lng === "number" && Number.isFinite(lng) ? lng : undefined,
+      };
+      const result = await scanAd(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, where, imageBase64, type, day);
+      logger.info("Ad scanned", { uid, storeId: result.storeId, newStore: result.newStore, deals: result.deals.length });
+      return { ...result, reward: await rewardReceipt(db, uid, day, result.duplicate, result.deals.length) };
+    } catch (err) {
+      logger.warn("Ad scan failed", err);
+      if (err instanceof AdScanError) throw new HttpsError("failed-precondition", err.message);
+      throw new HttpsError("internal", (err as Error).message);
+    }
+  }
+);
+
+/**
+ * Thanks shoppers for scanning: each new receipt or ad page (3+ prices, not scanned before) adds one
  * everyday plan for today (up to LIMITS.bonusPerDay), and every 3rd earns a free Chef's pick.
  */
 async function rewardReceipt(db: Firestore, uid: string, day: string, duplicate: boolean, prices: number) {
