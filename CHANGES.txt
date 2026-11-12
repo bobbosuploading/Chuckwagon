@@ -14,12 +14,14 @@ Build 4 (0.1.0)
 - Tap any deal on the home screen to see all of it: a bigger ad picture, the full name and deal text, the price and the store.
 - The deals banner no longer says "Up to 0% off" when a store's deals are all "buy this, get that" offers.
 - The "Stock up" button on the home screen now works on its own: it shows every stock-up price from all aisles, and picking an aisle like Meat turns it off.
+- Scanning on a weak cell signal: receipt and ad photos are now smaller, so they upload faster, and the app waits longer before giving up. If a scan still fails, you'll see what to try (like Wi-Fi or better service) instead of an error code like "DEADLINE EXCEEDED". Try scanning a long receipt with one or two bars.
 [Ad scans need a Firebase deploy of functions (new scanAdPhoto). Stores whose ad we
 already load automatically (Kroger, H-E-B, Walmart, Dollar General) refuse ad scans.]
 [Share a deal needs a Firebase deploy of functions (shareDealPost, voteSharedDealPost) and
 firestore rules (sharedDeals is readable). The share extension needs the App Group
 group.com.bobby.chuckwagon, which Xcode adds when signing (see ios/README.md).]
 [Stock-up trip needs a Firebase deploy of firestore rules (clubLists is readable).]
+[Weak-signal scanning needs a Firebase deploy of functions (photo scans now get 4 minutes).]
 
 ========================================
 Build 3 (0.1.0)

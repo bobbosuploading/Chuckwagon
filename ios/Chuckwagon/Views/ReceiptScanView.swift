@@ -176,7 +176,7 @@ struct ReceiptScanView: View {
                 adStoreId = scan.storeId
             }
         } catch {
-            self.error = error.localizedDescription
+            self.error = Backend.friendlyMessage(for: error)
         }
     }
 

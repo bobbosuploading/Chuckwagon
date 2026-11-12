@@ -5,7 +5,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
-import { scanReceipt } from "./receipts";
+import { ReceiptError, scanReceipt } from "./receipts";
 import { AdScanError, scanAd } from "./adScans";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
 
@@ -187,11 +187,19 @@ export const choosePlanMeals = onCall(async (request) => {
 const RECEIPT_LIMITS = { perUserPerDay: 10, allUsersPerDay: 500 };
 
 /**
+ * Photo uploads on a weak cell signal can take a minute or more before the model even starts,
+ * so photo functions get 4 minutes. The app waits a little longer than this (Backend.swift).
+ */
+const PHOTO_TIMEOUT_SECONDS = 240;
+/** Shown when a photo scan fails for a reason the shopper can't fix (details go to the log). */
+const PHOTO_FAILED = "We couldn't read that photo just now. Please try again in a minute.";
+
+/**
  * "Scan a receipt": reads a receipt photo and saves its everyday prices for that store,
  * so meal plans can price items that aren't on sale. Data: { storeId, imageBase64, mediaType }.
  */
 export const scanReceiptPhoto = onCall(
-  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan receipts");
     const { storeId, imageBase64, mediaType } = (request.data ?? {}) as {
@@ -227,7 +235,8 @@ export const scanReceiptPhoto = onCall(
       return { ...result, reward: await rewardReceipt(db, uid, day, result.duplicate, result.items.length) };
     } catch (err) {
       logger.warn("Receipt scan failed", err);
-      throw new HttpsError("internal", (err as Error).message);
+      if (err instanceof ReceiptError) throw new HttpsError("failed-precondition", err.message);
+      throw new HttpsError("internal", PHOTO_FAILED);
     }
   }
 );
@@ -242,7 +251,7 @@ const AD_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
  * don't have yet (named from the ad); plus { imageBase64, mediaType }.
  */
 export const scanAdPhoto = onCall(
-  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan ads");
     const { storeId, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
@@ -288,7 +297,7 @@ export const scanAdPhoto = onCall(
     } catch (err) {
       logger.warn("Ad scan failed", err);
       if (err instanceof AdScanError) throw new HttpsError("failed-precondition", err.message);
-      throw new HttpsError("internal", (err as Error).message);
+      throw new HttpsError("internal", PHOTO_FAILED);
     }
   }
 );
@@ -303,7 +312,7 @@ const SHARE_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
  * Data: { storeId, imageBase64?, mediaType?, url?, text? }.
  */
 export const shareDealPost = onCall(
-  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to share deals");
     const { storeId, imageBase64, mediaType, url, text } = (request.data ?? {}) as {
@@ -357,7 +366,7 @@ export const shareDealPost = onCall(
     } catch (err) {
       logger.warn("Deal share failed", err);
       if (err instanceof ShareError) throw new HttpsError("failed-precondition", err.message);
-      throw new HttpsError("internal", (err as Error).message);
+      throw new HttpsError("internal", PHOTO_FAILED);
     }
   }
 );
