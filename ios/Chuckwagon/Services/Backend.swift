@@ -61,6 +61,14 @@ enum Backend {
             .filter { ($0.validTo.map { String($0.prefix(10)) } ?? today) >= today }
     }
 
+    /// How many deals a store has, for the store list. A count costs about one read per
+    /// 1,000 deals, so this stays cheap. It can include a few expired ad deals.
+    static func dealCount(storeId: String) async throws -> Int {
+        let snap = try await db.collection("deals").whereField("storeId", isEqualTo: storeId)
+            .count.getAggregation(source: .server)
+        return snap.count.intValue
+    }
+
     /// The monthly Sam's Club stock-up list, or nil before the first one is made.
     static func clubList() async throws -> ClubList? {
         let doc = try await db.collection("clubLists").document("sams").getDocument()
