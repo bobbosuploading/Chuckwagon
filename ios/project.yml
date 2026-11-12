@@ -33,6 +33,8 @@ targetTemplates:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseFunctions
+      - package: Firebase
+        product: FirebaseAppCheck
 
 targets:
   # The real app: TestFlight and the App Store. Archive this one.
@@ -47,6 +49,8 @@ targets:
       properties:
         com.apple.developer.applesignin: [Default]
         com.apple.security.application-groups: [group.com.bobby.chuckwagon]
+        # App Check: TestFlight and App Store builds always use production App Attest.
+        com.apple.developer.devicecheck.appattest-environment: production
     dependencies:
       - target: ChuckwagonShare
     settings:
@@ -72,6 +76,7 @@ targets:
       path: Dev/ChuckwagonDev.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
+        com.apple.developer.devicecheck.appattest-environment: production
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon.dev

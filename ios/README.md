@@ -65,3 +65,20 @@ replace the TestFlight app (reinstall it from the TestFlight app if that happens
 4. Press Run (⌘R). On the phone, the first time: Settings > Privacy & Security > Developer Mode > On (the phone restarts).
 
 Swift code can check `#if DEV_BUILD` for dev-only behaviour.
+
+## App Check
+
+The app sends an App Check token with every Firebase call, so only the real Chuckwagon app can use the backend.
+Real iPhones (Xcode, TestFlight, App Store) use Apple's **App Attest**. The simulator uses the debug provider:
+its token prints in the Xcode console, and you add it under Firebase console > App Check > Apps > ⋮ > Manage debug tokens.
+
+Rollout, in order:
+
+1. Firebase console > App Check > Apps > the iOS app > **App Attest** > Save (needs the Apple Team ID). Done for
+   `com.bobby.chuckwagon` on Nov 12, 2026. Do the same for **Chuckwagon Dev** before turning enforcement on.
+2. Ship a TestFlight build with App Check. Until the next step, older builds keep working.
+3. When App Check > APIs shows mostly verified requests, turn enforcement on:
+   - Functions: set the GitHub repo variable `APP_CHECK_ENFORCE` to `true` and run the "Deploy to Firebase" workflow.
+   - Firestore: App Check > APIs > Cloud Firestore > **Enforce**.
+
+To undo, set `APP_CHECK_ENFORCE` back to `false` and redeploy, and click Unenforce for Firestore.

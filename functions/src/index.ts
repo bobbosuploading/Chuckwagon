@@ -3,6 +3,7 @@ import { FieldValue, Firestore, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import { ReceiptError, scanReceipt } from "./receipts";
@@ -79,6 +80,7 @@ const MAX_AREAS = 15;
  * collection still has to run, or "waitlist" if the beta is full.
  */
 export const registerArea = onCall(async (request) => {
+  requireApp(request, "registerArea");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const zip = String(request.data?.zip ?? "").trim();
   if (!/^\d{5}$/.test(zip)) throw new HttpsError("invalid-argument", "Please send a 5-digit ZIP code");
@@ -111,6 +113,7 @@ export const registerArea = onCall(async (request) => {
  *   premium: true, maxUses: 25, uses: 0, expiresAt: "2027-02-01" (optional)
  */
 export const redeemTesterCode = onCall(async (request) => {
+  requireApp(request, "redeemTesterCode");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const code = String(request.data?.code ?? "").trim().toUpperCase();
   if (!/^[A-Z0-9-]{4,32}$/.test(code)) throw new HttpsError("invalid-argument", "That code doesn't look right.");
@@ -139,6 +142,7 @@ export const redeemTesterCode = onCall(async (request) => {
 export const planMealsForStore = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: "512MiB" },
   async (request) => {
+    requireApp(request, "planMealsForStore");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to plan meals");
     const data = request.data as PlanRequest;
     if (!data?.storeId) throw new HttpsError("invalid-argument", "storeId is required");
@@ -162,6 +166,7 @@ export const planMealsForStore = onCall(
  * Data: { planId, meals: [meal names] }. Returns the updated plan.
  */
 export const choosePlanMeals = onCall(async (request) => {
+  requireApp(request, "choosePlanMeals");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const { planId, meals } = (request.data ?? {}) as { planId?: string; meals?: unknown };
   if (!planId || !Array.isArray(meals)) throw new HttpsError("invalid-argument", "planId and meals are required");
@@ -201,6 +206,7 @@ const PHOTO_FAILED = "We couldn't read that photo just now. Please try again in 
 export const scanReceiptPhoto = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
+    requireApp(request, "scanReceiptPhoto");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan receipts");
     const { storeId, imageBase64, mediaType } = (request.data ?? {}) as {
       storeId?: string;
@@ -253,6 +259,7 @@ const AD_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
 export const scanAdPhoto = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
+    requireApp(request, "scanAdPhoto");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan ads");
     const { storeId, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
       storeId?: string;
@@ -314,6 +321,7 @@ const SHARE_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
 export const shareDealPost = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
+    requireApp(request, "shareDealPost");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to share deals");
     const { storeId, imageBase64, mediaType, url, text } = (request.data ?? {}) as {
       storeId?: string;
@@ -373,6 +381,7 @@ export const shareDealPost = onCall(
 
 /** "Still there" / "Gone" on a deal a shopper shared. Data: { id, vote: "here" | "gone" }. */
 export const voteSharedDealPost = onCall(async (request) => {
+  requireApp(request, "voteSharedDealPost");
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
   const { id, vote } = (request.data ?? {}) as { id?: string; vote?: string };
   if (!id || !/^[a-f0-9]{24}$/.test(id) || (vote !== "here" && vote !== "gone")) {

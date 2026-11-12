@@ -37,12 +37,15 @@ jobs:
             echo "KROGER_CLIENT_SECRET=$KROGER_CLIENT_SECRET"
             echo "INSTACART_API_KEY=$INSTACART_API_KEY"
             echo "INSTACART_API_URL=$INSTACART_API_URL"
+            echo "APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE:-false}"
           } > .env
         env:
           KROGER_CLIENT_ID: ${{ secrets.KROGER_CLIENT_ID }}
           KROGER_CLIENT_SECRET: ${{ secrets.KROGER_CLIENT_SECRET }}
           INSTACART_API_KEY: ${{ secrets.INSTACART_API_KEY }}
           INSTACART_API_URL: ${{ vars.INSTACART_API_URL }}
+          # Repo variable: "true" makes the functions refuse calls from builds without App Check.
+          APP_CHECK_ENFORCE: ${{ vars.APP_CHECK_ENFORCE }}
       - name: Deploy
         run: npx --yes firebase-tools@14 deploy --project chuckwagon-ebbcc --only "${{ inputs.what }}" --non-interactive --force
         env:

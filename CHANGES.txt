@@ -24,6 +24,9 @@ firestore rules (sharedDeals is readable). The share extension needs the App Gro
 group.com.bobby.chuckwagon, which Xcode adds when signing (see ios/README.md).]
 [Stock-up trip needs a Firebase deploy of firestore rules (clubLists is readable).]
 [Weak-signal scanning needs a Firebase deploy of functions (photo scans now get 4 minutes).]
+[App Check (PR #10): the app now proves it's the real Chuckwagon app (Apple App Attest)
+on every backend call. Nothing for testers to try. Enforcement is OFF, so older builds and
+the dev app keep working. Turn it on (see ios/README.md) once most testers are on Build 4.]
 
 ========================================
 Build 3 (0.1.0)
