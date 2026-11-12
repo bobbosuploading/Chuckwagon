@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// This week's deals at one store, with the "Headed to" button.
+/// This week's deals at one store, with the "Headed to" button. Opens from the store list
+/// (StoresHomeView), which owns the navigation stack.
 struct HomeView: View {
     @Environment(Preferences.self) private var prefs
     @Environment(\.scenePhase) private var scenePhase
@@ -13,7 +14,6 @@ struct HomeView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var showingHeadedTo = false
-    @State private var showingSettings = false
     @State private var showingPlans = false
     @State private var showingReceipt = false
     @State private var showingStockUpTrip = false
@@ -29,10 +29,17 @@ struct HomeView: View {
         var id: String { item.id }
     }
 
+    init(storeId: String) {
+        _storeId = State(initialValue: storeId)
+    }
+
+    /// Starred stores (or every nearby store if none are starred), plus the one being shown,
+    /// which may be one the shopper tapped without starring.
     private var myStores: [Store] {
         let near = prefs.nearby(stores)
         let favs = near.filter { prefs.favoriteStoreIds.contains($0.id ?? "") }
-        return favs.isEmpty ? near : favs
+        guard !favs.isEmpty else { return near }
+        return near.filter { prefs.favoriteStoreIds.contains($0.id ?? "") || $0.id == storeId }
     }
 
     private var currentStore: Store? { stores.first { $0.id == storeId } }
@@ -54,97 +61,79 @@ struct HomeView: View {
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    categoryChips
-                    content
-                }
-                .padding(.bottom, 100)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                categoryChips
+                content
             }
-            .background(Theme.cream.ignoresSafeArea())
-            .searchable(text: $search, prompt: "Search this week's deals")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Picker("Store", selection: $storeId) {
-                            ForEach(myStores) { Text($0.name).tag($0.id) }
-                        }
-                    } label: {
-                        Label("Change store", systemImage: "storefront.fill")
-                    }
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
-                    Button { showingReceipt = true } label: { Label("Scan a receipt or ad", systemImage: "doc.text.viewfinder") }
-                    Button { showingStockUpTrip = true } label: { Label("Stock-up trip", systemImage: "shippingbox.fill") }
-                    Button { showingSettings = true } label: { Image(systemName: "slider.horizontal.3") }
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                Button {
-                    showingHeadedTo = true
-                } label: {
-                    Label("Headed to \(currentStore?.chain.capitalized ?? "the store")", systemImage: "cart.fill")
-                }
-                .buttonStyle(BigButtonStyle())
-                .disabled(storeId == nil)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
-            }
-            .sheet(isPresented: $showingHeadedTo) {
-                if let store = currentStore {
-                    HeadedToView(store: store, otherStores: myStores.filter { $0.id != store.id && $0.chain != store.chain })
-                }
-            }
-            .sheet(item: $selectedDeal) { deal in
-                DealDetailView(deal: deal, storeName: currentStore?.name)
-            }
-            .sheet(isPresented: $showingPlans) { MyPlansView() }
-            .sheet(isPresented: $showingShare, onDismiss: { Task { await loadShared() } }) {
-                ShareDealView(store: currentStore, myStores: myStores) { storeId = $0 }
-            }
-            .sheet(item: $inboxShare, onDismiss: { Task { await loadShared(); checkInbox() } }) { share in
-                ShareDealView(store: currentStore, myStores: myStores, shared: (share.item, share.image)) { storeId = $0 }
-            }
-            .sheet(isPresented: $showingStockUpTrip) { StockUpTripView() }
-            .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
-                ReceiptScanView(store: currentStore, myStores: myStores) { added in
-                    // A store added from an ad photo: show it now, even if favorites would hide it.
-                    if !prefs.favoriteStoreIds.isEmpty, !prefs.favoriteStoreIds.contains(added) {
-                        prefs.favoriteStoreIds.append(added)
-                    }
-                    storeId = added
-                }
-            }
-            .sheet(isPresented: $showingSettings, onDismiss: { Task { await loadStores() } }) {
-                NavigationStack {
-                    PreferencesForm(showsStores: true)
-                        .navigationTitle("Settings")
-                        .toolbar { Button("Done") { showingSettings = false } }
-                }
-            }
-            .task {
-                do {
-                    try await Backend.signIn()
-                } catch {
-                    self.error = error.localizedDescription
-                    return
-                }
-                await loadStores()
-                checkInbox()
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    Task {
-                        await loadStores()
-                        checkInbox()
-                    }
-                }
-            }
-            .task(id: "\(currentStore?.dealsStoreId ?? "")|\(category?.rawValue ?? "all")") { await load() }
+            .padding(.bottom, 100)
         }
+        .background(Theme.cream.ignoresSafeArea())
+        .searchable(text: $search, prompt: "Search this week's deals")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
+                Button { showingReceipt = true } label: { Label("Scan a receipt or ad", systemImage: "doc.text.viewfinder") }
+                Button { showingStockUpTrip = true } label: { Label("Stock-up trip", systemImage: "shippingbox.fill") }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                showingHeadedTo = true
+            } label: {
+                Label("Headed to \(currentStore?.chain.capitalized ?? "the store")", systemImage: "cart.fill")
+            }
+            .buttonStyle(BigButtonStyle())
+            .disabled(storeId == nil)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+        }
+        .sheet(isPresented: $showingHeadedTo) {
+            if let store = currentStore {
+                HeadedToView(store: store, otherStores: myStores.filter { $0.id != store.id && $0.chain != store.chain })
+            }
+        }
+        .sheet(item: $selectedDeal) { deal in
+            DealDetailView(deal: deal, storeName: currentStore?.name)
+        }
+        .sheet(isPresented: $showingPlans) { MyPlansView() }
+        .sheet(isPresented: $showingShare, onDismiss: { Task { await loadShared() } }) {
+            ShareDealView(store: currentStore, myStores: myStores) { storeId = $0 }
+        }
+        .sheet(item: $inboxShare, onDismiss: { Task { await loadShared(); checkInbox() } }) { share in
+            ShareDealView(store: currentStore, myStores: myStores, shared: (share.item, share.image)) { storeId = $0 }
+        }
+        .sheet(isPresented: $showingStockUpTrip) { StockUpTripView() }
+        .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
+            ReceiptScanView(store: currentStore, myStores: myStores) { added in
+                // A store added from an ad photo: show it now, even if favorites would hide it.
+                if !prefs.favoriteStoreIds.isEmpty, !prefs.favoriteStoreIds.contains(added) {
+                    prefs.favoriteStoreIds.append(added)
+                }
+                storeId = added
+            }
+        }
+        .task {
+            do {
+                try await Backend.signIn()
+            } catch {
+                self.error = error.localizedDescription
+                return
+            }
+            await loadStores()
+            checkInbox()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task {
+                    await loadStores()
+                    checkInbox()
+                }
+            }
+        }
+        .task(id: "\(currentStore?.dealsStoreId ?? "")|\(category?.rawValue ?? "all")") { await load() }
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     /// Opens a deal shared from another app, once the stores are loaded.
@@ -153,7 +142,7 @@ struct HomeView: View {
         inboxShare = InboxShare(item: next.item, image: next.image)
     }
 
-    /// Reload the store list. Runs at launch, after Settings closes and when the app comes back
+    /// Reload the store list. Runs on opening, after a scan and when the app comes back
     /// to the front, so stores added since launch (or a new ZIP, radius or favorites) show up.
     private func loadStores() async {
         await prefs.fillInCoordinatesIfMissing()
@@ -178,11 +167,7 @@ struct HomeView: View {
                     .font(.system(size: 13, weight: .heavy, design: .rounded))
                     .tracking(1.5)
                     .foregroundStyle(Theme.red)
-                Text(currentStore?.name ?? "Your store")
-                    .font(Theme.title(30))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                storeName
                 if let line = currentStore?.cityLine, !line.isEmpty {
                     Label(line, systemImage: "mappin.and.ellipse")
                         .font(Theme.body(.subheadline))
@@ -199,6 +184,33 @@ struct HomeView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)
+    }
+
+    /// The store's name. With more than one store to pick from, tapping it switches stores.
+    @ViewBuilder private var storeName: some View {
+        let name = Text(currentStore?.name ?? "Your store")
+            .font(Theme.title(30))
+            .foregroundStyle(Theme.ink)
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
+            .multilineTextAlignment(.leading)
+        if myStores.count > 1 {
+            Menu {
+                Picker("Store", selection: $storeId) {
+                    ForEach(myStores) { Text($0.name).tag($0.id) }
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    name
+                    Image(systemName: "chevron.down.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Theme.red)
+                }
+            }
+            .accessibilityHint("Switches to another of your stores")
+        } else {
+            name
+        }
     }
 
     private var savingsBanner: some View {
