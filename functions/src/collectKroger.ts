@@ -1,15 +1,19 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
-import { KrogerClient, KrogerProduct } from "./kroger";
+import { KrogerClient, KrogerProduct, KrogerStore } from "./kroger";
 import { fitToDoc, PRICE_BOOK_TERMS, PriceBookItem } from "./priceBook";
 import {
   Category,
+  KROGER_MAX_SOURCE_STORES,
   KROGER_RADIUS_MILES,
+  KROGER_SHARE_MILES,
   KROGER_STORE_LIMIT,
+  KROGER_STRETCH_MILES,
   PAGES_PER_TERM,
   PAGE_SIZE,
   SEARCH_TERMS,
 } from "./config";
+import { clearOwnDeals, markAreasReady, planRegions, RegionStore, sharingFieldsForSet } from "./regions";
 import { StockUp, withStockUp } from "./stockUp";
 
 /** One sale item, as stored in Firestore at deals/{storeId}_{productId}. */
@@ -35,7 +39,9 @@ export interface Deal {
   validTo?: string;
   /** Worth buying extra of (set when saved; see stockUp.ts). */
   stockUp?: StockUp | null;
-  source: "kroger-api" | "flipp" | "walmart-api";
+  /** shopper-ad: read from a shopper's photo of a printed ad (see adScans.ts).
+   *  shopper-share: shared from social media (sharedDeals.ts; only in plans, never in deals/). */
+  source: "kroger-api" | "flipp" | "walmart-api" | "shopper-ad" | "shopper-share";
   fetchedAt: Timestamp;
 }
 
@@ -91,7 +97,14 @@ function toPriceBookItem(p: KrogerProduct, category: Category, seenAt: string): 
 }
 
 export interface RunSummary {
+  /** Areas (ZIPs) looked at, home first. */
+  areas: string[];
+  /** Stores collected in full. */
   stores: number;
+  /** Stores that reuse a nearby collected store's prices. */
+  sharedStores: number;
+  /** Stores left out because the per-run cap was reached. */
+  skippedStores: number;
   deals: number;
   /** Everyday prices saved to priceBooks/{storeId}, all stores together. */
   prices: number;
@@ -100,42 +113,110 @@ export interface RunSummary {
   errors: string[];
 }
 
+type AreaStore = KrogerStore & RegionStore & { zips: string[] };
+
+const storeLabel = (s: KrogerStore) => [s.name, s.address.city].filter(Boolean).join(", ");
+
 /**
- * Pull current Kroger sale items for stores near `zip` and replace them in Firestore.
- * Also saves every product's regular price to the store's price book.
+ * Pull current Kroger sale items and save them to Firestore, for stores near every area ZIP.
+ * Only one store per price region is collected (see regions.ts); the others point at it.
+ * Also saves every product's regular price to the collected store's price book.
  * With dryRun, nothing is written and the counts are only reported.
  */
 export async function collectKrogerDeals(
   clientId: string,
   clientSecret: string,
-  zip: string,
+  zips: string[],
   dryRun = false
 ): Promise<RunSummary> {
   const db = getFirestore();
   const kroger = new KrogerClient(clientId, clientSecret);
   const now = Timestamp.now();
   const seenAt = now.toDate().toISOString().slice(0, 10);
-  const summary: RunSummary = { stores: 0, deals: 0, prices: 0, removed: 0, apiCalls: 0, errors: [] };
+  const summary: RunSummary = {
+    areas: zips, stores: 0, sharedStores: 0, skippedStores: 0, deals: 0, prices: 0, removed: 0, apiCalls: 0, errors: [],
+  };
 
-  const stores = await kroger.storesNear(zip, KROGER_RADIUS_MILES, KROGER_STORE_LIMIT);
-  summary.apiCalls++;
-  summary.stores = stores.length;
-  logger.info(`Found ${stores.length} Kroger stores near ${zip}`, stores.map((s) => `${s.name} (${s.locationId})`));
+  // Stores near each area, home area first and nearest first. A store near two areas is listed once.
+  const byId = new Map<string, AreaStore>();
+  for (const zip of zips) {
+    try {
+      const near = await kroger.storesNear(zip, KROGER_RADIUS_MILES, KROGER_STORE_LIMIT);
+      summary.apiCalls++;
+      for (const s of near) {
+        const id = `kroger-${s.locationId}`;
+        const known = byId.get(id);
+        if (known) {
+          known.zips.push(zip);
+          continue;
+        }
+        byId.set(id, {
+          ...s,
+          id,
+          division: s.divisionNumber ?? null,
+          geo: s.geolocation ? { lat: s.geolocation.latitude, lng: s.geolocation.longitude } : null,
+          zips: [zip],
+        });
+      }
+    } catch (err) {
+      const msg = `stores near ${zip}: ${(err as Error).message}`;
+      logger.warn(msg);
+      summary.errors.push(msg);
+    }
+  }
+  const regions = planRegions([...byId.values()], {
+    shareMiles: KROGER_SHARE_MILES,
+    maxSources: KROGER_MAX_SOURCE_STORES,
+    stretchMiles: KROGER_STRETCH_MILES,
+  });
+  summary.stores = regions.sources.length;
+  summary.sharedStores = regions.borrowers.length;
+  summary.skippedStores = regions.skipped.length;
+  logger.info(
+    `Kroger regions for ${zips.join(", ")}: collecting ${regions.sources.map(storeLabel).join("; ")}`,
+    {
+      shared: regions.borrowers.map((b) => `${storeLabel(b.store)} <- ${storeLabel(b.from)}`),
+      skipped: regions.skipped.map(storeLabel),
+    }
+  );
 
   const writer = dryRun ? null : db.bulkWriter();
+  const storeDoc = (store: AreaStore) => ({
+    chain: store.chain,
+    name: store.name,
+    locationId: store.locationId,
+    division: store.division ?? null,
+    address: store.address,
+    zip: store.address.zipCode ?? null,
+    geo: store.geo ?? null,
+    // Shopper ZIPs this store was found near, so the app can match it even without coordinates.
+    areaZips: store.zips,
+    source: "kroger-api",
+    updatedAt: now,
+  });
 
-  for (const store of stores) {
-    const storeId = `kroger-${store.locationId}`;
-    writer?.set(db.doc(`stores/${storeId}`), {
-      chain: store.chain,
-      name: store.name,
-      locationId: store.locationId,
-      address: store.address,
-      zip: store.address.zipCode ?? null,
-      geo: store.geolocation ? { lat: store.geolocation.latitude, lng: store.geolocation.longitude } : null,
-      source: "kroger-api",
-      updatedAt: now,
+  // Stores that borrow: point them at their source and drop anything they collected before.
+  for (const { store, from, miles } of regions.borrowers) {
+    if (!writer) continue;
+    const away = miles !== null ? ` (${Math.round(miles)} mi away)` : "";
+    writer.set(db.doc(`stores/${store.id}`), {
+      ...storeDoc(store),
+      ...sharingFieldsForSet({
+        dealsFrom: from.id,
+        everydayFrom: from.id,
+        note: `Prices from ${storeLabel(from)}${away}`,
+      }),
     });
+    writer.delete(db.doc(`priceBooks/${store.id}`));
+  }
+  if (writer) {
+    await writer.flush();
+    for (const { store } of regions.borrowers) summary.removed += await clearOwnDeals(db, store.id);
+  }
+
+  for (const store of regions.sources) {
+    const storeId = store.id;
+    writer?.set(db.doc(`stores/${storeId}`), storeDoc(store));
 
     const seen = new Map<string, Deal>();
     const prices = new Map<string, PriceBookItem>();
@@ -204,6 +285,8 @@ export async function collectKrogerDeals(
 
   if (!writer) return summary;
   await writer.close();
-  await db.collection("runs").add({ type: "kroger", zip, at: now, ...summary });
+  const covered = [...regions.sources, ...regions.borrowers.map((b) => b.store)].flatMap((s) => s.zips);
+  await markAreasReady(db, covered);
+  await db.collection("runs").add({ type: "kroger", zip: zips[0], at: now, ...summary });
   return summary;
 }

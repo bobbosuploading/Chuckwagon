@@ -1,11 +1,11 @@
 name: Collect H-E-B everyday prices
 
-# Once a month (the 2nd, 6:45 AM CT) through Apify's free plan.
+# Once a month (the 11th, 6:45 AM CT, the day after the Apify free plan resets) through Apify's free plan.
 # Needs the APIFY_TOKEN secret; skips itself until it exists.
 # Turn off before a paid launch by setting the repository variable HEB_PRICES_ENABLED to false.
 on:
   schedule:
-    - cron: "45 12 2 * *"
+    - cron: "45 12 11 * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -15,6 +15,10 @@ on:
       max_items:
         description: "Products to fetch (20 costs about 14 cents; 711 is the full monthly run)"
         default: "20"
+      force:
+        description: "Run even if this month's prices were already saved (uses more Apify credit)"
+        type: boolean
+        default: false
 
 jobs:
   collect:
@@ -42,6 +46,8 @@ jobs:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           HEB_PRICES_ENABLED: ${{ vars.HEB_PRICES_ENABLED }}
           HOME_ZIP: "77437"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '1' || '0' }}
           MAX_ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_items || '' }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json

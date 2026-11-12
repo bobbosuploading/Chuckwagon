@@ -13,6 +13,7 @@ import type { Category } from "./config";
 import type { Deal } from "./collectKroger";
 import { StockUp, stockUpTip } from "./stockUp";
 import { MATCH_MODEL, priceRegularItems } from "./priceItems";
+import { liveSharedDeals } from "./sharedDeals";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -34,9 +35,22 @@ export interface PlanRequest {
   /** Optional weekly budget in dollars for the whole list (sale + everyday items). The plan is built to fit it. */
   budget?: number;
   premium?: boolean; // use PREMIUM_MODEL ("chef's pick")
+  /**
+   * Optional: this many extra meal ideas (0 to 3) beyond mealCount, so the shopper can swap
+   * meals without a new search. The first mealCount meals start out picked; the grocery list
+   * and totals cover only the picked meals (see chooseMeals).
+   */
+  extraMeals?: number;
 }
 
+/** At most this many extra meal ideas per plan, and this many meals in all. */
+export const MAX_EXTRA_MEALS = 3;
+const MAX_TOTAL_MEALS = 10;
+
 /** How many of the best deals per category to send to the model. Household goods aren't meal ingredients. */
+/** Most deals shared from social media to put in one plan (they can sell out). */
+const MAX_SHARED_DEALS = 8;
+
 const DEALS_PER_CATEGORY: Partial<Record<Category, number>> = {
   meat: 40,
   seafood: 15,
@@ -113,6 +127,7 @@ Rules:
 - Give every grocery line an estimatedPrice, and when there is a BUDGET keep their sum under its target.
 - Don't state totals, targets or price estimates in notes; the app shows the real totals from store prices.
 - If the sale items can't support the requested number of meals, return fewer and explain in notes.
+- If EXTRA MEAL IDEAS is more than 0, return that many extra meals AFTER the main ones (main meals first, best first). Make each extra clearly different from the main meals (another protein or style) so the shopper has a real choice, and build it from the same sale items where you can. The shopper picks which meals to cook, and the app keeps only the grocery lines for picked meals, so: put every meal's ingredients on the grocery list, give every meal a different name, and list in forMeals the exact name of every meal that uses the line. A BUDGET applies to the main meals; keep each extra about as cheap as a main meal so a swap still fits.
 - The grocery list must be COMPLETE: every ingredient from every meal that isn't under HAVE AT HOME, combined into one line per product (usually 12 to 25 lines). Group it by aisle.`;
 
 function dealLine(d: Deal, id: string, storeName?: string): string {
@@ -130,6 +145,8 @@ export interface PricedListItem {
   item: string;
   buyCount: number;
   quantityNote: string;
+  /** Estimated pounds for sale items priced per lb, else null. */
+  pounds?: number | null;
   dealId: string | null;
   onSale: boolean;
   salePrice: number | null;
@@ -139,7 +156,7 @@ export interface PricedListItem {
   forMeals: string[];
   /** For items not on sale: where the price came from ("store", "receipt", or "estimate"
    *  when we have no prices for this store and a nearby store's price stands in). */
-  priceSource?: "store" | "receipt" | "estimate" | null;
+  priceSource?: "store" | "receipt" | "nearby" | "estimate" | null;
   /** For items not on sale: the product that was priced, e.g. "Kroger Garlic | 3 ct". */
   pricedAs?: string | null;
   /** Where to buy it. Non-sale items go to the store with the most items. */
@@ -158,6 +175,8 @@ export interface StoreTotal {
   savings: number;
   /** Everything priced at this store, sale and regular. */
   total: number;
+  /** Set when this store uses a nearby store's prices, e.g. "Prices from Kroger, Sugar Land (14 mi away)". */
+  pricesNote?: string;
 }
 
 export interface MealPlan {
@@ -182,6 +201,11 @@ export interface MealPlan {
     /** estimatedTotal / total servings across the meals. */
     perServing: number | null;
   };
+  /**
+   * Only when the shopper asked for extra meal ideas. `meals`, `groceryList` and the totals
+   * above cover the picked meals; this holds every idea and the list for all of them.
+   */
+  options?: MealOptions;
   /** Only when the shopper set a budget. */
   budget?: {
     amount: number;
@@ -193,6 +217,21 @@ export interface MealPlan {
   };
   usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | null };
   createdAt: string;
+}
+
+export interface MealOptions {
+  /** Every meal idea, main meals first. */
+  meals: ModelPlan["meals"];
+  /** The grocery list for every meal idea, priced. */
+  groceryList: PricedListItem[];
+  /** Names of the meals the shopper has picked (the main meals until they change them). */
+  chosen: string[];
+  /** How many meals the shopper asked for. */
+  mealCount: number;
+  /** Every store in the plan, for rebuilding per-store totals. */
+  stores: { storeId: string; storeName: string; pricesNote?: string }[];
+  /** The planner's own note, before tips were added. */
+  modelNotes: string;
 }
 
 /** USD per million tokens (input, output), from Anthropic's price list. */
@@ -212,6 +251,11 @@ export const BUDGET_RANGE = { min: 10, max: 2000 };
 /** One planning attempt after pricing: the model's plan with our prices filled in. */
 interface PricedDraft {
   plan: ModelPlan;
+  /** Priced list for every meal (main and extra). */
+  fullList: PricedListItem[];
+  /** Names of the main meals (the first mealCount). */
+  chosen: string[];
+  /** The list for the main meals only, and its totals. */
   groceryList: PricedListItem[];
   saleItems: number;
   savings: number;
@@ -219,6 +263,74 @@ interface PricedDraft {
   regularItems: number;
   estimatedTotal: number;
   model: string;
+}
+
+/** Totals for a priced list. Lines with no price are counted, not added. */
+export function listTotals(list: PricedListItem[]) {
+  let saleItems = 0;
+  let savings = 0;
+  let regularItems = 0;
+  let itemsNotPriced = 0;
+  for (const li of list) {
+    if (li.lineTotal === null) itemsNotPriced++;
+    else if (li.onSale) saleItems += li.lineTotal;
+    else regularItems += li.lineTotal;
+    if (li.lineSavings !== null) savings += li.lineSavings;
+  }
+  saleItems = round2(saleItems);
+  regularItems = round2(regularItems);
+  return { saleItems, savings: round2(savings), itemsNotPriced, regularItems, estimatedTotal: round2(saleItems + regularItems) };
+}
+
+/**
+ * The grocery list for just the picked meals, from the list for every meal idea.
+ * Lines no picked meal uses are dropped. Lines shared with a dropped meal are cut down
+ * in proportion (at least one package), and their prices with them.
+ */
+export function selectList(fullList: PricedListItem[], chosen: string[], allMeals: string[]): PricedListItem[] {
+  const picked = new Set(chosen);
+  const known = new Set(allMeals);
+  const out: PricedListItem[] = [];
+  for (const li of fullList) {
+    // Names the model got wrong can't be matched; treat those lines as needed by everyone.
+    const uses = li.forMeals.filter((m) => known.has(m));
+    if (uses.length === 0) {
+      out.push({ ...li });
+      continue;
+    }
+    const kept = uses.filter((m) => picked.has(m));
+    if (kept.length === 0) continue;
+    if (kept.length === uses.length) {
+      out.push({ ...li, forMeals: li.forMeals.filter((m) => picked.has(m) || !known.has(m)) });
+      continue;
+    }
+    const share = kept.length / uses.length;
+    const dropped = uses.filter((m) => !picked.has(m));
+    let ratio: number;
+    let pounds = li.pounds ?? null;
+    let buyCount = li.buyCount;
+    let quantityNote = li.quantityNote;
+    if (li.onSale && pounds) {
+      const lb = Math.max(0.5, Math.round(pounds * share * 2) / 2);
+      ratio = lb / pounds;
+      pounds = lb;
+      quantityNote = `about ${lb} lb`;
+    } else {
+      buyCount = Math.max(1, Math.ceil(li.buyCount * share));
+      ratio = li.buyCount > 0 ? buyCount / li.buyCount : 1;
+      if (buyCount !== li.buyCount) quantityNote = `${li.quantityNote}, minus what ${dropped.join(" and ")} needed`;
+    }
+    out.push({
+      ...li,
+      buyCount,
+      pounds,
+      quantityNote,
+      lineTotal: li.lineTotal !== null ? round2(li.lineTotal * ratio) : null,
+      lineSavings: li.lineSavings !== null ? round2(li.lineSavings * ratio) : null,
+      forMeals: li.forMeals.filter((m) => picked.has(m) || !known.has(m)),
+    });
+  }
+  return out;
 }
 
 /** What the model hears when its plan came in over budget. */
@@ -234,7 +346,7 @@ function overBudgetFeedback(d: PricedDraft, budget: number): string {
 The priciest lines:
 ${priciest}
 
-Make a new plan that fits. Aim for $${Math.floor(budget * BUDGET_AIM * 0.95)} or less: swap pricey proteins for cheaper ones, cut extra packages, share more ingredients between meals, and drop a meal only if nothing else works. Return the complete plan again.`;
+Make a new plan that fits. Aim for $${Math.floor(budget * BUDGET_AIM * 0.95)} or less: swap pricey proteins for cheaper ones, cut extra packages, share more ingredients between meals, and drop a meal only if nothing else works. Return the complete plan again${d.plan.meals.length > d.chosen.length ? ", with the extra meal ideas after the main meals, kept just as cheap" : ""}.`;
 }
 
 export async function planMeals(
@@ -246,28 +358,65 @@ export async function planMeals(
   const model = modelOverride || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
   const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
   const storeNames = new Map<string, string>();
+  const storeChains = new Map<string, string>();
+  // Stores in a price region share one store's deals (see regions.ts): dealsFrom says whose.
+  const dealSource = new Map<string, string>();
+  const pricesNotes = new Map<string, string>();
   for (const id of storeIds) {
     const doc = await db.doc(`stores/${id}`).get();
     if (!doc.exists) throw new Error(`Unknown store ${id}`);
     storeNames.set(id, doc.get("name"));
+    storeChains.set(id, String(doc.get("chain") ?? ""));
+    dealSource.set(id, (doc.get("dealsFrom") as string | undefined) ?? id);
+    const note = doc.get("pricesNote") as string | undefined;
+    if (note) pricesNotes.set(id, note);
   }
   const multi = storeIds.length > 1;
+  const mealCount = req.mealCount ?? 4;
+  const extraMeals = Math.max(0, Math.min(MAX_EXTRA_MEALS, MAX_TOTAL_MEALS - mealCount, Math.floor(req.extraMeals ?? 0)));
   const budget =
     req.budget && req.budget >= BUDGET_RANGE.min && req.budget <= BUDGET_RANGE.max ? round2(req.budget) : undefined;
 
   // Pick the best deals (highest % off) per category, sharing the budget across stores.
-  const deals = new Map<string, Deal>(); // short id -> deal
+  const deals = new Map<string, Deal>(); // short id -> deal (storeId = the shopper's store)
+  const dealDocIds = new Map<string, string>(); // short id -> Firestore deals/{id}
+  const loadedSources = new Set<string>();
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   for (const id of storeIds) {
+    // Two chosen stores in the same region have the same deals; load them once.
+    const source = dealSource.get(id)!;
+    if (loadedSources.has(source)) continue;
+    loadedSources.add(source);
     for (const [category, limit] of Object.entries(DEALS_PER_CATEGORY)) {
       const snap = await db
         .collection("deals")
-        .where("storeId", "==", id)
+        .where("storeId", "==", source)
         .where("category", "==", category)
         .orderBy("pctOff", "desc")
         .limit(Math.ceil(limit! / storeIds.length))
         .get();
-      snap.forEach((doc) => deals.set(`d${deals.size + 1}`, doc.data() as Deal));
+      snap.forEach((doc) => {
+        // Deals from shoppers' ad photos stay saved until the next scan clears them; skip ended ones.
+        const validTo = doc.get("validTo") as string | undefined;
+        if (validTo && validTo.slice(0, 10) < today) return;
+        const key = `d${deals.size + 1}`;
+        deals.set(key, { ...(doc.data() as Deal), storeId: id });
+        dealDocIds.set(key, doc.id);
+      });
     }
+  }
+  // Deals shoppers shared from social media for these stores (sharedDeals.ts), a few each.
+  for (const id of storeIds) {
+    const shared = await liveSharedDeals(db, id, storeChains.get(id) ?? "", today);
+    shared
+      .sort((a, b) => b.pctOff - a.pctOff)
+      .slice(0, Math.ceil(MAX_SHARED_DEALS / storeIds.length))
+      .forEach((d) => {
+        const key = `d${deals.size + 1}`;
+        const { sharedId, ...deal } = d;
+        deals.set(key, deal);
+        dealDocIds.set(key, `shared_${sharedId}`);
+      });
   }
   if (deals.size === 0) throw new Error(`No current deals for ${storeIds.join(", ")}`);
 
@@ -276,7 +425,8 @@ export async function planMeals(
     .join("\n");
   const user = `${multi ? "STORES" : "STORE"}: ${storeIds.map((id) => storeNames.get(id)).join(", ")}
 HOUSEHOLD SIZE: ${req.householdSize ?? 3}
-NUMBER OF MEALS: ${req.mealCount ?? 4}
+NUMBER OF MEALS: ${mealCount}
+EXTRA MEAL IDEAS: ${extraMeals}${extraMeals > 0 ? ` (return ${mealCount + extraMeals} meals: your ${mealCount} main meals first, then ${extraMeals} the shopper can swap in)` : ""}
 MAX COOK TIME: ${req.maxCookMinutes ?? 45} minutes
 DIET: ${req.diet || "none"}
 ALLERGIES: ${req.allergies || "none"}
@@ -311,6 +461,15 @@ ${lines}`;
     if (response.stop_reason === "max_tokens") throw new Error("The plan was cut off (max_tokens)");
     const plan = response.parsed_output;
     if (!plan) throw new Error("The model's answer didn't match the plan format");
+    plan.meals = plan.meals.slice(0, MAX_TOTAL_MEALS);
+    // Picking meals goes by name, so every name must be different.
+    const seen = new Set<string>();
+    for (const m of plan.meals) {
+      let name = m.name.trim() || "Meal";
+      for (let n = 2; seen.has(name); n++) name = `${m.name.trim()} (${n})`;
+      seen.add(name);
+      m.name = name;
+    }
 
     // Safety net: if the model left meal ingredients off the list, add them.
     const listed = plan.groceryList;
@@ -354,9 +513,6 @@ ${lines}`;
     plan.groceryList = [...listed, ...missing.values()];
 
     // Price the list from our own data.
-    let saleItems = 0;
-    let savings = 0;
-    let itemsNotPriced = 0;
     // Non-sale items go to the store where most sale items are bought.
     const saleCount = new Map<string, number>();
     for (const li of plan.groceryList) {
@@ -378,12 +534,9 @@ ${lines}`;
       const qty = byWeight ? li.pounds : li.buyCount;
       const lineTotal = qty && deal.salePrice !== null ? round2(deal.salePrice * qty) : null;
       const lineSavings = qty && deal.savings !== null ? round2(deal.savings * qty) : null;
-      if (lineTotal === null) itemsNotPriced++;
-      if (lineTotal !== null) saleItems += lineTotal;
-      if (lineSavings !== null) savings += lineSavings;
       return {
         ...li,
-        dealId: `${deal.storeId}_${deal.productId}`,
+        dealId: dealDocIds.get(li.dealId!) ?? `${deal.storeId}_${deal.productId}`,
         onSale: true,
         salePrice: deal.salePrice,
         regularPrice: deal.regularPrice,
@@ -409,26 +562,20 @@ ${lines}`;
       return { prices: regular.map(() => null), inputTokens: 0, outputTokens: 0 };
     });
     addTokens(MATCH_MODEL, matched.inputTokens, matched.outputTokens);
-    let regularItems = 0;
     regular.forEach((li, i) => {
       const p = matched.prices[i];
-      if (!p) {
-        itemsNotPriced++;
-        return;
-      }
+      if (!p) return;
       li.regularPrice = p.unitPrice;
       li.lineTotal = p.lineTotal;
       li.priceSource = p.source;
       const qty = p.perLb ? ` | ${p.quantity} lb` : p.quantity > 1 ? ` | x${p.quantity}` : "";
       li.pricedAs = `${p.product}${p.size ? ` | ${p.size}` : ""}${qty}`;
-      regularItems += p.lineTotal;
     });
-    regularItems = round2(regularItems);
-    const estimatedTotal = round2(saleItems + regularItems);
-    return {
-      plan, groceryList, saleItems: round2(saleItems), savings: round2(savings), itemsNotPriced, regularItems,
-      estimatedTotal, model: response.model,
-    };
+    // Budget math covers only the main meals; extra ideas wait until the shopper picks them.
+    const allNames = plan.meals.map((m) => m.name);
+    const chosen = allNames.slice(0, mealCount);
+    const picked = extraMeals > 0 ? selectList(groceryList, chosen, allNames) : groceryList;
+    return { plan, fullList: groceryList, chosen, groceryList: picked, ...listTotals(picked), model: response.model };
   };
 
   // Budget-first: if the priced list comes in over budget, show the model the real
@@ -453,52 +600,42 @@ ${lines}`;
       console.warn("Budget revision failed", err);
     }
   }
-  const { plan, groceryList, saleItems, savings, itemsNotPriced, regularItems, estimatedTotal } = chosen;
-
-  // Totals per store, busiest store first.
-  const stores: StoreTotal[] = storeIds
-    .map((id) => {
-      const items = groceryList.filter((li) => li.storeId === id);
-      return {
-        storeId: id,
-        storeName: storeNames.get(id)!,
-        items: items.length,
-        saleItems: round2(items.reduce((t, li) => t + (li.onSale ? li.lineTotal ?? 0 : 0), 0)),
-        savings: round2(items.reduce((t, li) => t + (li.lineSavings ?? 0), 0)),
-        total: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
-      };
-    })
-    .filter((s) => s.items > 0)
-    .sort((a, b) => b.items - a.items);
-  let notes = plan.notes;
-  for (const extra of stores.slice(1)) {
-    if (extra.items <= 2 && extra.savings < 3) {
-      notes += `${notes ? " " : ""}Tip: ${extra.storeName} only saves you ${extra.savings > 0 ? `$${extra.savings.toFixed(2)}` : "a little"} on ${extra.items} item${extra.items === 1 ? "" : "s"}. You could skip that stop and buy ${extra.items === 1 ? "it" : "them"} at ${stores[0].storeName}.`;
-    }
-  }
-
-  const stockUps = groceryList.filter((li) => li.stockUp);
-  if (stockUps.length > 0) {
-    const names = stockUps.slice(0, 3).map((li) => li.item.toLowerCase());
-    const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
-    notes += `${notes ? " " : ""}Stock-up pick${stockUps.length === 1 ? "" : "s"}: ${list} ${stockUps.length === 1 ? "is" : "are"} priced low enough to buy extra and put away. See the tip on the list for how to keep ${stockUps.length === 1 ? "it" : "them"}.`;
-  }
+  const { plan } = chosen;
 
   // Map short deal ids in ingredients back to Firestore ids.
-  const meals = plan.meals.map((m) => ({
+  const allMeals = plan.meals.map((m) => ({
     ...m,
     ingredients: m.ingredients.map((ing) => {
       const deal = ing.dealId ? deals.get(ing.dealId) : undefined;
-      return { ...ing, dealId: deal ? `${deal.storeId}_${deal.productId}` : null };
+      return { ...ing, dealId: deal ? dealDocIds.get(ing.dealId!) ?? `${deal.storeId}_${deal.productId}` : null };
     }),
   }));
-
-  if (budget && estimatedTotal > budget) {
-    notes += `${notes ? " " : ""}Heads up: this week's list comes to about $${estimatedTotal.toFixed(2)}, $${(estimatedTotal - budget).toFixed(2)} over your $${budget} budget. Try fewer meals, or tell us what you already have at home.`;
-  } else if (budget && itemsNotPriced > 0) {
-    notes += `${notes ? " " : ""}${itemsNotPriced} item${itemsNotPriced === 1 ? " doesn't" : "s don't"} have a price yet, so leave a little room in your budget.`;
-  }
-  const servings = plan.meals.reduce((t, m) => t + m.servings, 0);
+  const storeInfo = storeIds.map((id) => ({
+    storeId: id,
+    storeName: storeNames.get(id)!,
+    ...(pricesNotes.has(id) ? { pricesNote: pricesNotes.get(id) } : {}),
+  }));
+  // Extra ideas only matter when the model actually returned more meals than were asked for.
+  const options: MealOptions | undefined =
+    extraMeals > 0 && allMeals.length > chosen.chosen.length
+      ? {
+          meals: allMeals,
+          groceryList: chosen.fullList,
+          chosen: chosen.chosen,
+          mealCount,
+          stores: storeInfo,
+          modelNotes: plan.notes,
+        }
+      : undefined;
+  const picked = assemblePlan({
+    meals: allMeals.filter((m) => chosen.chosen.includes(m.name)),
+    groceryList: chosen.groceryList,
+    modelNotes: plan.notes,
+    stores: storeInfo,
+    budget,
+    revised,
+    hasOptions: options !== undefined,
+  });
 
   let inputTokens = 0;
   let outputTokens = 0;
@@ -514,12 +651,88 @@ ${lines}`;
     storeId: req.storeId,
     storeName: storeIds.map((id) => storeNames.get(id)).join(" + "),
     storeIds,
-    stores,
     model: chosen.model,
     // Firestore rejects undefined values, so drop unset options.
     request: JSON.parse(JSON.stringify(req)) as PlanRequest,
+    ...picked,
+    ...(options ? { options } : {}),
+    usage: {
+      inputTokens,
+      outputTokens,
+      estimatedCostUsd: costUsd !== null ? Math.round(costUsd * 10000) / 10000 : null,
+    },
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/** The parts of a plan that depend on which meals are picked. */
+export type PickedParts = Pick<MealPlan, "meals" | "groceryList" | "stores" | "notes" | "totals" | "budget">;
+
+/** Builds per-store totals, notes, totals and budget for the picked meals and their list. */
+function assemblePlan(a: {
+  meals: ModelPlan["meals"];
+  groceryList: PricedListItem[];
+  modelNotes: string;
+  stores: { storeId: string; storeName: string; pricesNote?: string }[];
+  budget?: number;
+  revised: boolean;
+  hasOptions: boolean;
+}): PickedParts {
+  const { meals, groceryList, budget } = a;
+  const { saleItems, savings, itemsNotPriced, regularItems, estimatedTotal } = listTotals(groceryList);
+
+  // Totals per store, busiest store first.
+  const stores: StoreTotal[] = a.stores
+    .map(({ storeId: id, storeName, pricesNote }) => {
+      const items = groceryList.filter((li) => li.storeId === id);
+      return {
+        storeId: id,
+        storeName,
+        items: items.length,
+        saleItems: round2(items.reduce((t, li) => t + (li.onSale ? li.lineTotal ?? 0 : 0), 0)),
+        savings: round2(items.reduce((t, li) => t + (li.lineSavings ?? 0), 0)),
+        total: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
+        ...(pricesNote ? { pricesNote } : {}),
+      };
+    })
+    .filter((s) => s.items > 0)
+    .sort((a, b) => b.items - a.items);
+  let notes = a.modelNotes;
+  for (const extra of stores.slice(1)) {
+    if (extra.items <= 2 && extra.savings < 3) {
+      notes += `${notes ? " " : ""}Tip: ${extra.storeName} only saves you ${extra.savings > 0 ? `$${extra.savings.toFixed(2)}` : "a little"} on ${extra.items} item${extra.items === 1 ? "" : "s"}. You could skip that stop and buy ${extra.items === 1 ? "it" : "them"} at ${stores[0].storeName}.`;
+    }
+  }
+
+  // Say so when a store the shopper picked ended up with nothing, so it doesn't look dropped.
+  const unused = a.stores.filter((s) => !stores.some((t) => t.storeId === s.storeId)).map((s) => s.storeName);
+  if (unused.length > 0 && stores.length > 0) {
+    const names = unused.length > 1 ? `${unused.slice(0, -1).join(", ")} or ${unused[unused.length - 1]}` : unused[0];
+    notes += `${notes ? " " : ""}Nothing at ${names} beat these prices for this week's meals, so ${unused.length === 1 ? "it isn't" : "they aren't"} on your list.`;
+  }
+
+  for (const s of stores) {
+    if (s.pricesNote) notes += `${notes ? " " : ""}${s.storeName}: ${s.pricesNote.replace(/\.$/, "")}. Chains price by region, so these usually match your store.`;
+  }
+
+  const stockUps = groceryList.filter((li) => li.stockUp);
+  if (stockUps.length > 0) {
+    const names = stockUps.slice(0, 3).map((li) => li.item.toLowerCase());
+    const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+    notes += `${notes ? " " : ""}Stock-up pick${stockUps.length === 1 ? "" : "s"}: ${list} ${stockUps.length === 1 ? "is" : "are"} priced low enough to buy extra and put away. See the tip on the list for how to keep ${stockUps.length === 1 ? "it" : "them"}.`;
+  }
+
+  if (budget && estimatedTotal > budget) {
+    notes += `${notes ? " " : ""}Heads up: this week's list comes to about $${estimatedTotal.toFixed(2)}, $${(estimatedTotal - budget).toFixed(2)} over your $${budget} budget. Try ${a.hasOptions ? "swapping in a cheaper meal idea, " : ""}fewer meals, or tell us what you already have at home.`;
+  } else if (budget && itemsNotPriced > 0) {
+    notes += `${notes ? " " : ""}${itemsNotPriced} item${itemsNotPriced === 1 ? " doesn't" : "s don't"} have a price yet, so leave a little room in your budget.`;
+  }
+  const servings = meals.reduce((t, m) => t + m.servings, 0);
+
+  return {
     meals,
     groceryList,
+    stores,
     notes,
     totals: {
       saleItems,
@@ -535,15 +748,33 @@ ${lines}`;
             amount: budget,
             left: round2(budget - estimatedTotal),
             fits: estimatedTotal <= budget,
-            revised,
+            revised: a.revised,
           },
         }
       : {}),
-    usage: {
-      inputTokens,
-      outputTokens,
-      estimatedCostUsd: costUsd !== null ? Math.round(costUsd * 10000) / 10000 : null,
-    },
-    createdAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Picks which meal ideas to cook and rebuilds the grocery list, totals and budget from
+ * the list already priced for every idea. No model call, so it's free and instant.
+ */
+export function chooseMeals(plan: MealPlan, chosen: string[]): PickedParts & { options: MealOptions } {
+  const options = plan.options;
+  if (!options) throw new Error("This plan has no extra meal ideas to pick from");
+  const allNames = options.meals.map((m) => m.name);
+  const picked = allNames.filter((n) => chosen.includes(n));
+  if (picked.length === 0) throw new Error("Pick at least one meal");
+  return {
+    ...assemblePlan({
+      meals: options.meals.filter((m) => picked.includes(m.name)),
+      groceryList: selectList(options.groceryList, picked, allNames),
+      modelNotes: options.modelNotes,
+      stores: options.stores,
+      budget: plan.budget?.amount,
+      revised: plan.budget?.revised ?? false,
+      hasOptions: true,
+    }),
+    options: { ...options, chosen: picked },
   };
 }

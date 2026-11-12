@@ -1,0 +1,71 @@
+CHUCKWAGON: WHAT'S NEW IN EACH TESTFLIGHT BUILD
+
+Newest build first. Copy the lines under a build's heading into TestFlight's
+"What to Test" box. Lines in [square brackets] are notes for us, not for testers.
+The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
+it goes up, add a new "Build N" section at the top of this list.
+
+========================================
+Build 4 (0.1.0)
+========================================
+- The app now opens on a list of stores near you, closest first, with how far each one is and how many deals it has this week. Tap a store to see its deals and plan supper. Tap the star next to the stores you shop at to keep them at the top under "My stores". If a store has no deals yet, it names the closest store of that chain that does. To switch stores from the deals screen, tap the store's name, or go back to the list.
+- New to the app? You start on that same screen: type your ZIP code or tap "Use my location" and your stores show up. Household size, diet and allergies are in Settings (the sliders button), and there's a shortcut to them at the bottom of the store list.
+- Scan a weekly ad: the scan button now does receipts and printed weekly ads. Switch to "Weekly ad" and snap one page at a time, with the dates the prices are good for. The deals show up on the home screen and in your plans until the ad ends. Try it with a store that has no deals in the app, like ALDI or a local grocer: pick "Another store" and we'll add it near your ZIP code. Coupons can't be scanned yet.
+- Share a deal: saw a grocery deal on Facebook, TikTok, Reddit or a deal site? In that app, tap Share and pick Chuckwagon (you may need to tap "More" the first time), or share a screenshot from Photos. Then open Chuckwagon, pick the store and tap "Add this deal". You can also tap "Share a deal" on the home screen and paste a link or the post's words. Shared deals show under "Spotted by shoppers" for everyone at that store. If you check one in the store, tap "Still there" or "Gone" so others know. Deals without an end date go away after a few days.
+- Stock-up trip: tap the box button at the top of the home screen for a list of bulk staples at Sam's Club that cost less per pound than H-E-B and Kroger, like bacon, butter, shredded cheese, oats and olive oil. It shows how much cheaper each one is and how to store it. Check off what you want and share the list. Prices are from the Sam's Club website and are updated about once a month.
+- Tap any deal on the home screen to see all of it: a bigger ad picture, the full name and deal text, the price and the store.
+- The deals banner no longer says "Up to 0% off" when a store's deals are all "buy this, get that" offers.
+- The "Stock up" button on the home screen now works on its own: it shows every stock-up price from all aisles, and picking an aisle like Meat turns it off.
+- Scanning on a weak cell signal: receipt and ad photos are now smaller, so they upload faster, and the app waits longer before giving up. If a scan still fails, you'll see what to try (like Wi-Fi or better service) instead of an error code like "DEADLINE EXCEEDED". Try scanning a long receipt with one or two bars.
+[Ad scans need a Firebase deploy of functions (new scanAdPhoto). Stores whose ad we
+already load automatically (Kroger, H-E-B, Walmart, Dollar General) refuse ad scans.]
+[Share a deal needs a Firebase deploy of functions (shareDealPost, voteSharedDealPost) and
+firestore rules (sharedDeals is readable). The share extension needs the App Group
+group.com.bobby.chuckwagon, which Xcode adds when signing (see ios/README.md).]
+[Stock-up trip needs a Firebase deploy of firestore rules (clubLists is readable).]
+[Weak-signal scanning needs a Firebase deploy of functions (photo scans now get 4 minutes).]
+[App Check (PR #10): the app now proves it's the real Chuckwagon app (Apple App Attest)
+on every backend call. Nothing for testers to try. Enforcement is OFF, so older builds and
+the dev app keep working. Turn it on (see ios/README.md) once most testers are on Build 4.]
+
+========================================
+Build 3 (0.1.0)
+========================================
+[App Check is only in this build if PR #10 is merged before the build is made.
+It works behind the scenes, so there is nothing for testers to try.]
+[Dev app: the ChuckwagonDev scheme installs "Chuckwagon Dev" next to the
+TestFlight app for testing from Xcode. Not part of the TestFlight build.]
+
+What's new since the first build:
+
+- Your location: tap "Use my location" or type a ZIP code to set your stores. Nearby stores share prices from one store in the same chain region.
+- Budget-first planning: set a weekly budget and the plan stays under it.
+- Stock-up tips: a heads-up when a deal is good enough to buy extra.
+- Send to cart: Kroger adds items straight to your cart, Walmart gets an add-to-cart link, and H-E-B and the other stores get "Share list" (sorted by aisle) to Reminders, Notes or Messages.
+- More stores and prices: Walmart, ALDI and Dollar General ads, plus everyday prices. All 31 H-E-B ad deals now show, tagged "DEAL" where no regular price is listed.
+- Receipt rewards: each scanned receipt earns an extra plan, and 3 receipts earn a Chef's pick.
+- Meal ideas to pick from: every plan now comes with 2 extra meal ideas. On the Meals tab, tap the circles to swap a meal you don't like for one of the extras, or add one. The grocery list and total update right away, and it doesn't use up a plan.
+- Sale prices on receipts: when you scan a receipt, items bought on sale or with a coupon get a red SALE tag with the regular price. Sale prices no longer count as a store's everyday price.
+- Store distance: in Settings, under "Your stores", pick how far to look for stores (10, 20, 30 or 50 miles). It starts at 30.
+- Stores in nearby towns, like Kroger, now show up even when there isn't one in your own ZIP code.
+- The store menu on the home screen now updates as soon as you close Settings, so stores you pick there show up right away.
+- If you add a store under "Also stop at" and nothing there beats the other stores, the plan's notes now say so instead of leaving it off without a word.
+
+Please try: setting your ZIP, making a plan with a budget, swapping a meal on the Meals tab, scanning a receipt, and sending a list to your store. Tell us about anything that looks wrong or confusing.
+
+========================================
+Build 2 (0.1.0)
+========================================
+[A re-upload of build 1. Nothing changed.]
+
+Same as build 1.
+
+========================================
+Build 1 (0.1.0)
+========================================
+First TestFlight build.
+
+- See this week's sale items at your store.
+- Get a meal plan and grocery list built from those deals.
+- Sign in with Apple, or try it without an account.
+- Enter a tester code to unlock premium plans.

@@ -81,7 +81,7 @@ Try it first with **Actions > Collect Walmart prices > Run workflow** (dry run i
 
 ## H-E-B everyday prices (beta only)
 
-H-E-B has no API. For the beta, `.github/workflows/collect-heb-prices.yml` runs once a month (the 2nd)
+H-E-B has no API. For the beta, `.github/workflows/collect-heb-prices.yml` runs once a month (the 11th, the day after the Apify free plan resets)
 and fetches shelf prices for about 80 staple ingredients (711 products) at the H-E-B nearest the home
 ZIP through a third-party Apify scraper (`zaiq/heb-scraper`, about $0.006 per product). That fits
 Apify's free plan ($5 of usage a month), and each run is capped so it can't cost more. Prices are
@@ -95,6 +95,29 @@ before a paid launch: set the repository variable `HEB_PRICES_ENABLED` to `false
 Setup: make a free account at apify.com, copy your API token (Settings > API & Integrations), and
 save it as the repository secret `APIFY_TOKEN`. Then try **Actions > Collect H-E-B everyday prices >
 Run workflow** (dry run, 20 products, about 14 cents).
+
+## More areas: price regions
+
+Shoppers add their ZIP in the app (`registerArea`, at most 15 areas during the beta; later ones are waitlisted).
+The Kroger, H-E-B ad and ALDI/Dollar General ad collectors then cover the home ZIP plus every registered area,
+without collecting the same prices twice (`functions/src/regions.ts`):
+
+- **Kroger:** the stores near each area are grouped by chain and Kroger division. One store per group (within
+  `KROGER_SHARE_MILES`, 50 mi) is collected in full; the others get `dealsFrom` / `everydayFrom` pointing at it.
+  At most `KROGER_MAX_SOURCE_STORES` (8) stores are collected per run, about 1,100 of Kroger's 10,000 free daily
+  product calls. Settings are in `functions/src/config.ts`.
+- **H-E-B, ALDI, Dollar General ads:** Flipp hands every ZIP in a chain's ad region the same flyer, so each flyer is
+  read once and the other areas point at it. At most `AD_MAX_REGIONS` (6) different flyers per chain per run.
+- **H-E-B everyday prices** still come from the one monthly Apify run for the home ZIP (no extra Apify cost);
+  every other H-E-B area uses them.
+- **Walmart** still covers the home ZIP only.
+
+Every store that borrows has a `pricesNote` (e.g. "Prices from Kroger, Sugar Land (14 mi away)") that the app shows
+under the store and on meal plans, and everyday prices taken from the sharing store show as "nearby price".
+An area moves from `pending` to `ready` after the first collector run that covers it.
+
+To try other areas without touching the real list, run a collector from the Actions tab with **dry run** on and
+`area_zips` set, e.g. `78701,75201`.
 
 ## Send to cart
 
@@ -114,3 +137,29 @@ Setup (all optional; without them the buttons just say the feature isn't set up)
 | GitHub variable (optional) | `INSTACART_API_URL` | `https://connect.dev.instacart.tools` while using a development key; leave unset for production |
 
 The **Deploy to Firebase** workflow writes these into `functions/.env` before deploying. When deploying from a Mac, create `functions/.env` with the same names.
+
+## What's new list (TestFlight)
+
+`CHANGES.txt` lists what's new in each TestFlight build, newest first, in plain text ready to paste into TestFlight's "What to Test" box. Each time the build number in `ios/project.yml` goes up, add a `Build N` section at the top. The **Build iPhone app** workflow fails if the current build number has no section.
+
+## Sam's Club stock-up list (beta only)
+
+Sam's Club has no price feed. `.github/workflows/collect-sams.yml` runs once a month (the 12th)
+through an Apify scraper of samsclub.com search pages: about 320 bulk staples for about 30 cents,
+capped at 45 cents, which fits beside the H-E-B run in Apify's free $5. `functions/src/clubPrices.ts`
+works out each item's price per lb (or each, or per fl oz), asks Haiku which H-E-B / Kroger products
+are the same food, and saves the comparison to `clubLists/sams` for the app's "Stock-up trip" screen.
+Only items with a grocery price to compare are kept; an item is "worth the trip" at 10% cheaper or more.
+
+These are website prices, the same for every club. Manual runs default to a 20-item dry run.
+`REUSE_LAST=1` redoes the comparison on the last run's rows without scraping again.
+Like the H-E-B scraper, turn it off before a paid launch: set the repository variable
+`SAMS_PRICES_ENABLED` to `false`.
+
+### Staying inside Apify's free $5
+
+The H-E-B run (about $4.30) and the Sam's Club run (about 30 cents) together nearly fill the month.
+GitHub can start a scheduled run hours late, so a run by hand plus the late scheduled one once ran
+H-E-B twice in a day and used the whole allowance. Both jobs now check the `runs` log and skip when
+that job already saved prices in the last 25 days (`functions/src/apifyBudget.ts`). The "force" input
+on a manual run overrides this. Test runs still cost money, so keep them small.

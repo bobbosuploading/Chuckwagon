@@ -28,13 +28,8 @@ struct RootView: View {
     @State private var signInError: String?
 
     var body: some View {
-        Group {
-            if prefs.hasOnboarded {
-                HomeView()
-            } else {
-                OnboardingView()
-            }
-        }
+        // Everyone lands on the stores near them. A new shopper sets their area right there.
+        StoresHomeView()
         .task {
             do { try await Backend.signIn() } catch { signInError = error.localizedDescription }
         }

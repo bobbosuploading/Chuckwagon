@@ -8,35 +8,24 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "4"
 packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "11.0.0"
-targets:
-  Chuckwagon:
+# Settings shared by the real app and the dev app.
+targetTemplates:
+  ChuckwagonApp:
     type: application
     platform: iOS
-    sources:
-      - Chuckwagon
-    entitlements:
-      path: Chuckwagon/Chuckwagon.entitlements
-      properties:
-        com.apple.developer.applesignin: [Default]
-        # App Check: TestFlight and App Store builds always use production App Attest.
-        com.apple.developer.devicecheck.appattest-environment: production
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Chuckwagon uses your location once to find your ZIP code and the stores near you."
         INFOPLIST_KEY_NSCameraUsageDescription: "Chuckwagon uses the camera to read your grocery receipts so meal plans show real store prices."
-    scheme: {}
     dependencies:
       - package: Firebase
         product: FirebaseAuth
@@ -46,3 +35,85 @@ targets:
         product: FirebaseFunctions
       - package: Firebase
         product: FirebaseAppCheck
+
+targets:
+  # The real app: TestFlight and the App Store. Archive this one.
+  Chuckwagon:
+    templates: [ChuckwagonApp]
+    sources:
+      - Chuckwagon
+      - Shared
+    # The App Group lets the share extension hand shared deals to the app (ShareInbox).
+    entitlements:
+      path: Chuckwagon/Chuckwagon.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.security.application-groups: [group.com.bobby.chuckwagon]
+        # App Check: TestFlight and App Store builds always use production App Attest.
+        com.apple.developer.devicecheck.appattest-environment: production
+    dependencies:
+      - target: ChuckwagonShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon
+        INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme: {}
+
+  # Dev app: run from Xcode straight onto the iPhone. Its own bundle ID, name ("Chuckwagon Dev")
+  # and red DEV icon, so it installs next to the TestFlight app instead of replacing it.
+  # Same code, same Firebase project. Needs ios/Dev/GoogleService-Info.plist (see ios/README.md).
+  ChuckwagonDev:
+    templates: [ChuckwagonApp]
+    sources:
+      - path: Chuckwagon
+        excludes:
+          - GoogleService-Info.plist
+      - Dev
+      - Shared
+    # No App Group or share extension: the dev app shares deals from inside the app only.
+    entitlements:
+      path: Dev/ChuckwagonDev.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.developer.devicecheck.appattest-environment: production
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon.dev
+        INFOPLIST_KEY_CFBundleDisplayName: Chuckwagon Dev
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEV_BUILD
+    scheme: {}
+
+  # "Chuckwagon" in the share sheet: saves a post shared from Facebook, TikTok, Safari or Photos
+  # for the app to finish (ios/Shared/ShareInbox.swift). Embedded in the Chuckwagon app only.
+  ChuckwagonShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ShareExtension
+      - Shared
+    entitlements:
+      path: ShareExtension/ChuckwagonShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.bobby.chuckwagon]
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Chuckwagon
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bobby.chuckwagon.share
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES

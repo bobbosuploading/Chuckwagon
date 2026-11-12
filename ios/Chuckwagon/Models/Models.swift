@@ -12,6 +12,17 @@ struct Store: Identifiable, Codable, Hashable {
     /// Some collectors (Walmart) store coordinates at the top level instead of in `geo`.
     var lat: Double?
     var lng: Double?
+    /// Shopper ZIPs the collector found this store near (within its search radius).
+    var areaZips: [String]?
+    /// Set when this store shows a nearby store's deals (same chain and price region).
+    var dealsFrom: String?
+    /// Set when this store's everyday prices come from another store of the chain.
+    var everydayFrom: String?
+    /// Where this store's prices come from, e.g. "Prices from Kroger, Sugar Land (14 mi away)".
+    var pricesNote: String?
+
+    /// The store whose deals to load for this one.
+    var dealsStoreId: String? { dealsFrom ?? id }
 
     struct Geo: Codable, Hashable {
         var lat: Double
@@ -62,6 +73,14 @@ struct Deal: Identifiable, Codable, Hashable {
     var promo: String?
     /// Set when the price is low enough to buy extra and the item keeps.
     var stockUp: StockUp?
+    /// When the sale ends (ISO date), if known.
+    var validTo: String?
+    /// Where the deal came from; "shopper-ad" when read from a shopper's photo of a printed ad.
+    var source: String?
+    /// For shopper-ad deals: how many shoppers' scans showed it.
+    var confirmations: Int?
+
+    var fromShopperPhoto: Bool { source == "shopper-ad" }
 
     var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
 }
@@ -91,6 +110,59 @@ struct StockUp: Codable, Hashable {
         case "freezer": "Freezes well"
         case "fridge": "Keeps in the fridge"
         default: "Keeps in the pantry"
+        }
+    }
+}
+
+/// The monthly Sam's Club stock-up list, from Firestore `clubLists/sams`.
+struct ClubList: Codable {
+    var chain: String
+    var updatedAt: String?
+    var items: [Item]
+
+    var updatedDate: Date? {
+        guard let updatedAt else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: updatedAt)
+    }
+
+    struct Item: Codable, Identifiable, Hashable {
+        var id: String { name }
+        var name: String
+        var category: String
+        var price: Double
+        /// Price per lb, each, or per fl oz (see `unit`).
+        var unitPrice: Double
+        /// "lb", "ct" or "floz".
+        var unit: String
+        var keep: String?
+        var storage: String?
+        var compare: [Compare]
+        /// Percent cheaper than the best grocery price. Nil with nothing to compare.
+        var pctCheaper: Int?
+        var worthIt: Bool
+
+        struct Compare: Codable, Hashable {
+            var chain: String
+            var product: String
+            var unitPrice: Double
+        }
+
+        func unitLabel(_ price: Double) -> String {
+            switch unit {
+            case "lb": "\(price.dollars)/lb"
+            case "ct": "\(price.dollars) each"
+            default: "\(price.dollars)/fl oz"
+            }
+        }
+
+        var keepSymbol: String {
+            switch keep {
+            case "freezer": "snowflake"
+            case "fridge": "refrigerator"
+            default: "cabinet"
+            }
         }
     }
 }
@@ -127,6 +199,18 @@ struct MealPlan: Codable, Identifiable, Hashable {
     var stores: [StoreTotal]?
     /// Only when the shopper set a budget.
     var budget: Budget?
+    /// Only when extra meal ideas were asked for: every idea, and which ones are picked.
+    /// `meals` and the grocery list cover just the picked ones.
+    var options: Options?
+
+    struct Options: Codable, Hashable {
+        /// Every meal idea, the planner's main picks first.
+        var meals: [Meal]
+        /// Names of the picked meals.
+        var chosen: [String]
+        /// How many meals the shopper asked for.
+        var mealCount: Int
+    }
 
     struct Budget: Codable, Hashable {
         var amount: Double
@@ -143,6 +227,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var items: Int
         var saleItems: Double
         var savings: Double
+        /// Set when this store uses a nearby store's prices.
+        var pricesNote: String?
     }
     /// Ids of grocery items the user has checked off (saved in Firestore as `checked`).
     var checked: [String]?
@@ -192,7 +278,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var storeName: String?
         /// Worth buying extra of. Older plans don't have it.
         var stockUp: StockUp?
-        /// For items not on sale: "store", "receipt", or "estimate" (another store's price stands in).
+        /// For items not on sale: "store", "receipt", "nearby" (same chain, the store this one
+        /// shares prices with), or "estimate" (another chain's price stands in).
         var priceSource: String?
         /// For items not on sale: the product that was priced.
         var pricedAs: String?
@@ -223,4 +310,41 @@ extension Double {
     var dollars: String { formatted(.currency(code: "USD")) }
     /// "$60" with no cents, for budgets.
     var wholeDollars: String { formatted(.currency(code: "USD").precision(.fractionLength(0))) }
+}
+
+/// A deal a shopper shared from social media, a deal site or a message, from Firestore
+/// `sharedDeals/{id}` (functions/src/sharedDeals.ts). It shows until it ends or shoppers say it's gone.
+struct SharedDeal: Identifiable, Codable, Hashable {
+    @DocumentID var id: String?
+    var storeId: String
+    var storeName: String?
+    var chain: String
+    /// "one-store" (that store only, e.g. clearance) or "chain" (every store of the chain).
+    var scope: String
+    var clearance: Bool?
+    var name: String
+    var brand: String?
+    var size: String?
+    var soldBy: String?
+    var category: String
+    var regularPrice: Double?
+    var salePrice: Double?
+    var pctOff: Int?
+    var promo: String?
+    /// Last day it shows (ISO date): from the post, else a few days after it was shared.
+    var validTo: String
+    var endDateFromPost: Bool?
+    /// The post it came from, when a link was shared.
+    var url: String?
+    /// Shoppers who said it's still there (the sharer counts) and who said it's gone.
+    var here: [String]?
+    var gone: [String]?
+    var updatedAt: Timestamp?
+
+    var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
+    var stillThereCount: Int { here?.count ?? 0 }
+    var goneCount: Int { gone?.count ?? 0 }
+
+    /// Same as the backend's chainKey: "H-E-B" -> "heb".
+    static func chainKey(_ s: String) -> String { s.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) } }
 }
