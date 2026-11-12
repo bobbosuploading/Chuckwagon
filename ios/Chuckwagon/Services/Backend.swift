@@ -163,11 +163,11 @@ enum Backend {
 
     /// Sends a receipt photo to the backend, which saves the store's everyday prices.
     static func scanReceipt(storeId: String, image: UIImage) async throws -> ReceiptScan {
-        guard let jpeg = image.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) else {
+        guard let jpeg = image.uploadJPEG() else {
             throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
         }
-        let result = try await Functions.functions().httpsCallable("scanReceiptPhoto")
-            .call(["storeId": storeId, "imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"])
+        let result = try await callPhotoFunction("scanReceiptPhoto",
+            ["storeId": storeId, "imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"])
         let data = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(ReceiptScan.self, from: data)
     }
@@ -198,7 +198,7 @@ enum Backend {
     /// Sends one page of a printed weekly ad. Pass a store, or nil to add the store named on
     /// the ad near the shopper's ZIP.
     static func scanAd(storeId: String?, zip: String, latitude: Double, longitude: Double, image: UIImage) async throws -> AdScan {
-        guard let jpeg = image.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) else {
+        guard let jpeg = image.uploadJPEG() else {
             throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
         }
         var data: [String: Any] = ["imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"]
@@ -208,7 +208,7 @@ enum Backend {
             data["zip"] = zip
             if latitude != 0 { data["lat"] = latitude; data["lng"] = longitude }
         }
-        let result = try await Functions.functions().httpsCallable("scanAdPhoto").call(data)
+        let result = try await callPhotoFunction("scanAdPhoto", data)
         let json = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(AdScan.self, from: json)
     }
@@ -264,7 +264,7 @@ enum Backend {
     static func shareDeal(storeId: String, image: UIImage?, url: String?, text: String?) async throws -> ShareResult {
         var data: [String: Any] = ["storeId": storeId]
         if let image {
-            guard let jpeg = image.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) else {
+            guard let jpeg = image.uploadJPEG() else {
                 throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that picture."])
             }
             data["imageBase64"] = jpeg.base64EncodedString()
@@ -272,7 +272,7 @@ enum Backend {
         }
         if let url, !url.isEmpty { data["url"] = url }
         if let text, !text.isEmpty { data["text"] = text }
-        let result = try await Functions.functions().httpsCallable("shareDealPost").call(data)
+        let result = try await callPhotoFunction("shareDealPost", data)
         let json = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(ShareResult.self, from: json)
     }
@@ -282,6 +282,56 @@ enum Backend {
         _ = try await Functions.functions().httpsCallable("voteSharedDealPost")
             .call(["id": id, "vote": stillThere ? "here" : "gone"])
     }
+
+    /// Calls a function that reads a photo. These can be slow on a weak cell signal (the upload)
+    /// and while the model reads a long receipt, so they get longer than Firebase's 70-second
+    /// default: a bit more than the functions' own 240 seconds (functions/src/index.ts).
+    /// If the connection drops before the request gets through, it tries once more.
+    private static func callPhotoFunction(_ name: String, _ data: [String: Any]) async throws -> HTTPSCallableResult {
+        let callable = Functions.functions().httpsCallable(name)
+        callable.timeoutInterval = 250
+        do {
+            return try await callable.call(data)
+        } catch where isConnectionLost(error) {
+            try await Task.sleep(for: .seconds(2))
+            return try await callable.call(data)
+        }
+    }
+
+    /// True when the request likely never reached the server (no signal, connection dropped).
+    private static func isConnectionLost(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == FunctionsErrorDomain, FunctionsErrorCode(rawValue: error.code) == .unavailable { return true }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError { return isConnectionLost(underlying) }
+        return error.domain == NSURLErrorDomain && [
+            NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet, NSURLErrorCannotConnectToHost,
+        ].contains(error.code)
+    }
+
+    /// Words a shopper can act on, instead of "DEADLINE EXCEEDED" or "INTERNAL".
+    /// Our functions already send friendly words for problems the shopper can fix.
+    static func friendlyMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return nsError.code == NSURLErrorTimedOut ? slowMessage : offlineMessage
+        }
+        guard nsError.domain == FunctionsErrorDomain, let code = FunctionsErrorCode(rawValue: nsError.code) else {
+            return error.localizedDescription
+        }
+        switch code {
+        case .deadlineExceeded: return slowMessage
+        case .unavailable: return offlineMessage
+        case .unauthenticated: return "You're signed out. Close the app, open it again and try once more."
+        case .internal, .unknown, .dataLoss:
+            // Older functions sent raw error text here; only show it when it reads like ours.
+            let text = error.localizedDescription
+            return text.count > 12 && text != text.uppercased() && !text.contains("{") ? text : "Something went wrong on our end. Please try again in a minute."
+        default: return error.localizedDescription
+        }
+    }
+
+    private static let slowMessage = "That took too long, probably because of a weak signal. Try again on Wi-Fi or where you have better service."
+    private static let offlineMessage = "Couldn't reach Chuckwagon. Check your connection and try again."
 
     private static func decodePlan(_ object: Any) throws -> MealPlan {
         let data = try JSONSerialization.data(withJSONObject: object)

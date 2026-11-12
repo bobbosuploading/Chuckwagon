@@ -68,6 +68,9 @@ export interface ScanResult {
   outputTokens: number;
 }
 
+/** A problem the shopper can fix (shown to them as is). */
+export class ReceiptError extends Error {}
+
 export async function scanReceipt(
   db: Firestore,
   anthropic: Anthropic,
@@ -77,7 +80,7 @@ export async function scanReceipt(
   mediaType: "image/jpeg" | "image/png" | "image/heic" | "image/webp"
 ): Promise<ScanResult> {
   const store = await db.doc(`stores/${storeId}`).get();
-  if (!store.exists) throw new Error(`Unknown store ${storeId}`);
+  if (!store.exists) throw new ReceiptError("We don't know that store. Pick it again on the home screen.");
 
   const response = await anthropic.beta.messages.parse({
     model: RECEIPT_MODEL,
@@ -96,8 +99,8 @@ export async function scanReceipt(
     ],
   });
   const r = response.parsed_output;
-  if (!r) throw new Error("Couldn't read that receipt. Try a flatter, brighter photo.");
-  if (!r.isReceipt) throw new Error("That doesn't look like a grocery receipt.");
+  if (!r) throw new ReceiptError("Couldn't read that receipt. Try a flatter, brighter photo.");
+  if (!r.isReceipt) throw new ReceiptError("That doesn't look like a grocery receipt.");
 
   const seenAt = r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : new Date().toISOString().slice(0, 10);
   const { book, ads } = await loadComparePrices(db, storeId, store.get("dealsFrom") as string | undefined, store.get("everydayFrom") as string | undefined, seenAt);

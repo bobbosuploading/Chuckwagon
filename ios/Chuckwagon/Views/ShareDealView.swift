@@ -187,7 +187,7 @@ struct ShareDealView: View {
             if let inboxId { ShareInbox.remove(inboxId) }
             onShared(storeId)
         } catch {
-            self.error = error.localizedDescription
+            self.error = Backend.friendlyMessage(for: error)
         }
     }
 

@@ -35,7 +35,7 @@ enum ShareInbox {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             var hasImage = false
-            if let jpeg = image?.scaledForUpload(maxSide: 2000).jpegData(compressionQuality: 0.7) {
+            if let jpeg = image?.uploadJPEG() {
                 try jpeg.write(to: dir.appendingPathComponent("image.jpg"))
                 hasImage = true
             }
@@ -77,7 +77,20 @@ enum ShareInbox {
 }
 
 extension UIImage {
-    /// A copy no larger than `maxSide` points on its longest side (receipts stay readable at 2000).
+    /// The longest side Claude reads an image at. Bigger photos are shrunk to this by the API
+    /// anyway, so sending more pixels only makes the upload slower on a weak signal.
+    static let uploadMaxSide: CGFloat = 1568
+
+    /// A small JPEG for a photo scan: at most `uploadMaxSide` on its longest side, and
+    /// compressed harder when it's still big (a busy ad page), so uploads stay around 500 KB.
+    func uploadJPEG() -> Data? {
+        let scaled = scaledForUpload(maxSide: Self.uploadMaxSide)
+        guard let jpeg = scaled.jpegData(compressionQuality: 0.7) else { return nil }
+        if jpeg.count <= 600_000 { return jpeg }
+        return scaled.jpegData(compressionQuality: 0.5) ?? jpeg
+    }
+
+    /// A copy no larger than `maxSide` pixels on its longest side.
     func scaledForUpload(maxSide: CGFloat) -> UIImage {
         let longest = max(size.width, size.height)
         guard longest > maxSide else { return self }
