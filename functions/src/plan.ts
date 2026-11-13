@@ -288,18 +288,86 @@ export function listTotals(list: PricedListItem[]) {
   return { saleItems, savings: round2(savings), itemsNotPriced, regularItems, estimatedTotal: round2(saleItems + regularItems) };
 }
 
+/** Lowercase words only, each without a plural "s", for loose name matching. */
+function looseName(t: string): string {
+  return t
+    .toLowerCase()
+    .replace(/[^a-z]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => (w.length > 3 ? w.replace(/(es|s)$/, "") : w))
+    .join(" ");
+}
+
+/** Words that say little about which ingredient a line is. */
+const FILLER_WORDS = new Set(["fresh", "large", "small", "medium", "whole", "boneless", "skinless", "chopped", "sliced", "diced", "shredded", "ground", "frozen", "canned", "can", "bag", "pack", "package", "jar", "bunch", "the", "and", "with", "for", "lean", "low", "fat", "free", "family", "size", "pkg", "bottle", "box"]);
+
+/**
+ * Which meals a grocery line is for. The model's forMeals sometimes names a meal a little
+ * differently ("Beef Tacos" for "Easy beef tacos"), or names one that was renamed to keep names
+ * unique. Those lines used to count as needed by every meal, so dropping meals left their
+ * groceries on the list. Now forMeals names are matched loosely, and when none match, the meals
+ * whose ingredients name the item are used. Returns names as in `meals`; empty when nothing matches.
+ */
+export function mealsForLine(li: Pick<PricedListItem, "item" | "forMeals">, meals: ModelPlan["meals"]): string[] {
+  const uses = new Set<string>();
+  const byLoose = new Map(meals.map((m) => [looseName(m.name), m.name]));
+  for (const f of li.forMeals) {
+    const exact = meals.find((m) => m.name === f);
+    if (exact) {
+      uses.add(exact.name);
+      continue;
+    }
+    const lf = looseName(f);
+    if (!lf) continue;
+    const loose = byLoose.get(lf);
+    if (loose) {
+      uses.add(loose);
+      continue;
+    }
+    // "Beef tacos" for "Easy beef tacos", or the other way round, when only one meal fits.
+    const near = meals.filter((m) => {
+      const lm = looseName(m.name);
+      return lm.includes(lf) || lf.includes(lm);
+    });
+    if (near.length === 1) uses.add(near[0].name);
+  }
+
+  if (uses.size > 0) return meals.map((m) => m.name).filter((n) => uses.has(n));
+
+  // No meal by that name: use the meals whose ingredients name this item, e.g. "Yellow onion" for "onion".
+  const item = looseName(li.item);
+  if (item.length >= 3) {
+    for (const m of meals) {
+      if (m.ingredients.some((ing) => {
+        const name = looseName(ing.item);
+        return name.length >= 3 && (name.includes(item) || item.includes(name));
+      })) uses.add(m.name);
+    }
+  }
+
+  // Still nothing: fall back to a shared main word ("Shredded cheddar" for "cheddar cheese").
+  if (uses.size === 0) {
+    const words = item.split(" ").filter((w) => w.length >= 4 && !FILLER_WORDS.has(w));
+    for (const m of meals) {
+      if (m.ingredients.some((ing) => looseName(ing.item).split(" ").some((w) => words.includes(w)))) uses.add(m.name);
+    }
+  }
+  return meals.map((m) => m.name).filter((n) => uses.has(n));
+}
+
 /**
  * The grocery list for just the picked meals, from the list for every meal idea.
  * Lines no picked meal uses are dropped. Lines shared with a dropped meal are cut down
  * in proportion (at least one package), and their prices with them.
  */
-export function selectList(fullList: PricedListItem[], chosen: string[], allMeals: string[]): PricedListItem[] {
+export function selectList(fullList: PricedListItem[], chosen: string[], meals: ModelPlan["meals"]): PricedListItem[] {
   const picked = new Set(chosen);
-  const known = new Set(allMeals);
   const out: PricedListItem[] = [];
   for (const li of fullList) {
-    // Names the model got wrong can't be matched; treat those lines as needed by everyone.
-    const uses = li.forMeals.filter((m) => known.has(m));
+    const uses = mealsForLine(li, meals);
+    // A line no meal names (rare once ingredients are checked) may be needed by any meal, so keep it.
     if (uses.length === 0) {
       out.push({ ...li });
       continue;
@@ -307,7 +375,7 @@ export function selectList(fullList: PricedListItem[], chosen: string[], allMeal
     const kept = uses.filter((m) => picked.has(m));
     if (kept.length === 0) continue;
     if (kept.length === uses.length) {
-      out.push({ ...li, forMeals: li.forMeals.filter((m) => picked.has(m) || !known.has(m)) });
+      out.push({ ...li, forMeals: kept });
       continue;
     }
     const share = kept.length / uses.length;
@@ -333,7 +401,7 @@ export function selectList(fullList: PricedListItem[], chosen: string[], allMeal
       quantityNote,
       lineTotal: li.lineTotal !== null ? round2(li.lineTotal * ratio) : null,
       lineSavings: li.lineSavings !== null ? round2(li.lineSavings * ratio) : null,
-      forMeals: li.forMeals.filter((m) => picked.has(m) || !known.has(m)),
+      forMeals: kept,
     });
   }
   return out;
@@ -601,7 +669,7 @@ ${lines}`;
     // Budget math covers only the main meals; extra ideas wait until the shopper picks them.
     const allNames = plan.meals.map((m) => m.name);
     const chosen = allNames.slice(0, mealCount);
-    const picked = extraMeals > 0 ? selectList(groceryList, chosen, allNames) : groceryList;
+    const picked = extraMeals > 0 ? selectList(groceryList, chosen, plan.meals) : groceryList;
     return { plan, fullList: groceryList, chosen, groceryList: picked, ...listTotals(picked), model: response.model };
   };
 
@@ -796,7 +864,7 @@ export function chooseMeals(plan: MealPlan, chosen: string[]): PickedParts & { o
   return {
     ...assemblePlan({
       meals: options.meals.filter((m) => picked.includes(m.name)),
-      groceryList: selectList(options.groceryList, picked, allNames),
+      groceryList: selectList(options.groceryList, picked, options.meals),
       modelNotes: options.modelNotes,
       stores: options.stores,
       budget: plan.budget?.amount,
