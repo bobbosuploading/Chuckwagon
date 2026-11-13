@@ -9,6 +9,9 @@ settings:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "5"
+    # Signing team for every target, so regenerating with XcodeGen keeps it.
+    DEVELOPMENT_TEAM: R86HM48T2Z
+    CODE_SIGN_STYLE: Automatic
 packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
