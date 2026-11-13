@@ -3,11 +3,36 @@
     {
       "source": "functions",
       "codebase": "default",
-      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
     }
   ],
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "hosting",
+    "ignore": [
+      "firebase.json",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/m/**",
+        "function": {
+          "functionId": "sharePage",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/.well-known/apple-app-site-association",
+        "function": {
+          "functionId": "sharePage",
+          "region": "us-central1"
+        }
+      }
+    ]
   }
 }

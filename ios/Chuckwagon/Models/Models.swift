@@ -259,6 +259,10 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var item: String
         var amount: String
         var dealId: String?
+        /// Set on shared meals, which leave out deal ids.
+        var onSale: Bool?
+
+        var isOnSale: Bool { dealId != nil || onSale == true }
     }
 
     struct ListItem: Codable, Hashable, Identifiable {
@@ -347,4 +351,37 @@ struct SharedDeal: Identifiable, Codable, Hashable {
 
     /// Same as the backend's chainKey: "H-E-B" -> "heb".
     static func chainKey(_ s: String) -> String { s.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) } }
+}
+
+/// A meal or a plan someone shared by link, from Firestore `sharedMeals/{id}` (functions/src/sharedMeals.ts).
+/// It's a copy: no user id, prices or check marks from the sender beyond what's shown here.
+struct SharedMeals: Codable, Hashable {
+    /// "meal" for one recipe, "plan" for a plan's meals and grocery list.
+    var kind: String
+    var title: String
+    /// The store the plan was made for (where the "ON SALE" items were on sale).
+    var storeName: String
+    var meals: [MealPlan.Meal]
+    var groceryList: [ListItem]?
+    var totals: Totals?
+    var createdAt: String?
+
+    struct ListItem: Codable, Hashable, Identifiable {
+        var id: String { "\(aisle)|\(item)" }
+        var aisle: String
+        var item: String
+        var quantityNote: String
+        var buyCount: Int?
+        var onSale: Bool
+        var salePrice: Double?
+        var lineTotal: Double?
+        var storeName: String?
+    }
+
+    struct Totals: Codable, Hashable {
+        var estimatedTotal: Double?
+        var savings: Double
+    }
+
+    var isPlan: Bool { kind == "plan" }
 }

@@ -171,6 +171,27 @@ enum Backend {
         try await db.collection("plans").document(id).delete()
     }
 
+    /// A link to a meal, or to the whole plan when `meal` is nil. The backend copies it to
+    /// `sharedMeals` (nothing else of yours is shared); sharing the same thing again gives the same link.
+    static func shareLink(planId: String, meal: String?) async throws -> ShareLinks.Link {
+        var data: [String: Any] = ["planId": planId]
+        if let meal { data["meal"] = meal }
+        let result = try await Functions.functions().httpsCallable("shareMealLink").call(data)
+        guard let dict = result.data as? [String: Any],
+              let id = dict["id"] as? String,
+              let url = (dict["url"] as? String).flatMap(URL.init(string:)) else {
+            throw URLError(.badServerResponse)
+        }
+        return ShareLinks.Link(id: id, url: url, title: dict["title"] as? String ?? "A meal from Chuckwagon")
+    }
+
+    /// A meal or plan someone shared, by the id in its link. Readable without signing in.
+    static func sharedMeals(id: String) async throws -> SharedMeals? {
+        let doc = try await db.collection("sharedMeals").document(id).getDocument()
+        guard doc.exists else { return nil }
+        return try doc.data(as: SharedMeals.self)
+    }
+
     /// What a receipt scan learned. Prices are per item, or per lb when soldBy is "WEIGHT".
     struct ReceiptScan: Decodable {
         struct Item: Decodable, Hashable {

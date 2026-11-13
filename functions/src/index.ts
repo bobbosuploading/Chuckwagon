@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, Firestore, getFirestore } from "firebase-admin/firestore";
-import { defineSecret } from "firebase-functions/params";
-import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { defineSecret, defineString } from "firebase-functions/params";
+import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
@@ -9,6 +9,7 @@ import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import { ReceiptError, scanReceipt } from "./receipts";
 import { AdScanError, scanAd } from "./adScans";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
+import { appSiteAssociation, MealShareError, SHARE_ID, shareMeals, SharedMeals, sharePageHtml } from "./sharedMeals";
 
 initializeApp();
 
@@ -395,6 +396,73 @@ export const voteSharedDealPost = onCall(async (request) => {
     if (err instanceof ShareError) throw new HttpsError("not-found", err.message);
     throw err;
   }
+});
+
+/** Sharing costs nothing but a couple of Firestore writes; the cap only stops runaway loops. */
+const MEAL_SHARE_LIMITS = { perUserPerDay: 50 };
+
+/**
+ * "Share" on a meal or a plan: copies it to sharedMeals/{id} and returns a link that opens it in
+ * the other person's app (or a web page if they don't have it). See sharedMeals.ts.
+ * Data: { planId, meal? } where meal is one meal's name; leave it out to share the whole plan.
+ * Returns { id, url, title }.
+ */
+export const shareMealLink = onCall(async (request) => {
+  requireApp(request, "shareMealLink");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const { planId, meal } = (request.data ?? {}) as { planId?: unknown; meal?: unknown };
+  if (typeof planId !== "string" || !planId || planId.length > 64) throw new HttpsError("invalid-argument", "planId is required");
+  if (meal !== undefined && meal !== null && typeof meal !== "string") throw new HttpsError("invalid-argument", "meal must be a name");
+  const db = getFirestore();
+  const uid = request.auth.uid;
+  const mine = db.collection("usage").doc(`${uid}_${today()}`);
+  await db.runTransaction(async (tx) => {
+    const m = await tx.get(mine);
+    if (((m.get("mealShares") as number | undefined) ?? 0) >= MEAL_SHARE_LIMITS.perUserPerDay) {
+      throw new HttpsError("resource-exhausted", "You've shared a lot today. Try again tomorrow.");
+    }
+    tx.set(mine, { uid, day: today(), mealShares: FieldValue.increment(1) }, { merge: true });
+  });
+  try {
+    const result = await shareMeals(db, uid, planId, typeof meal === "string" && meal ? meal : undefined);
+    logger.info("Meal shared", { uid, planId, id: result.id, meal: !!meal });
+    return result;
+  } catch (err) {
+    if (err instanceof MealShareError) throw new HttpsError("not-found", err.message);
+    throw err;
+  }
+});
+
+/** The Apple Team ID (developer.apple.com > Membership), for universal links. Set as a GitHub repo variable. */
+const APPLE_TEAM_ID = defineString("APPLE_TEAM_ID", { default: "" });
+
+/**
+ * Web side of shared links, behind Firebase Hosting (firebase.json rewrites):
+ * - /m/{id}: the shared meal as a page, with "Open in Chuckwagon" and a TestFlight link.
+ *   iPhones with the app open the app instead and never load this.
+ * - /.well-known/apple-app-site-association: tells iOS that /m/ links belong to the app.
+ */
+export const sharePage = onRequest({ memory: "256MiB", maxInstances: 5 }, async (req, res) => {
+  if (req.path === "/.well-known/apple-app-site-association") {
+    const teamId = APPLE_TEAM_ID.value().trim();
+    if (!/^[A-Z0-9]{10}$/.test(teamId)) {
+      res.status(404).send("Not set up yet");
+      return;
+    }
+    res.set("Cache-Control", "public, max-age=3600");
+    res.json(appSiteAssociation(teamId));
+    return;
+  }
+  const match = /^\/m\/([^/]+)\/?$/.exec(req.path);
+  const id = match?.[1] ?? "";
+  let shared: SharedMeals | null = null;
+  if (SHARE_ID.test(id)) {
+    const snap = await getFirestore().collection("sharedMeals").doc(id).get();
+    if (snap.exists) shared = snap.data() as SharedMeals;
+  }
+  // Shared items never change, so let Hosting's CDN keep them (fewer function runs).
+  res.set("Cache-Control", shared ? "public, max-age=600, s-maxage=86400" : "public, max-age=60");
+  res.status(shared ? 200 : 404).type("html").send(sharePageHtml(id, shared));
 });
 
 /**

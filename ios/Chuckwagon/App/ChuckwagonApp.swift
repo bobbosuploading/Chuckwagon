@@ -26,6 +26,10 @@ struct ChuckwagonApp: App {
 struct RootView: View {
     @Environment(Preferences.self) private var prefs
     @State private var signInError: String?
+    /// A shared meal or plan opened from a link.
+    @State private var openedShare: OpenedShare?
+
+    struct OpenedShare: Identifiable { let id: String }
 
     var body: some View {
         // Everyone lands on the stores near them. A new shopper sets their area right there.
@@ -33,11 +37,24 @@ struct RootView: View {
         .task {
             do { try await Backend.signIn() } catch { signInError = error.localizedDescription }
         }
+        // Shared meal links: https://chuckwagon-ebbcc.web.app/m/{id} (universal link) or chuckwagon://m/{id}.
+        .onOpenURL { openShared($0) }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { openShared(url) }
+        }
+        .sheet(item: $openedShare) { SharedMealsView(id: $0.id) }
         .alert("Couldn't connect", isPresented: Binding(get: { signInError != nil }, set: { if !$0 { signInError = nil } })) {
             Button("OK") { signInError = nil }
         } message: {
             Text(signInError ?? "")
         }
+    }
+}
+
+extension RootView {
+    private func openShared(_ url: URL) {
+        guard let id = ShareLinks.sharedId(from: url), openedShare?.id != id else { return }
+        openedShare = OpenedShare(id: id)
     }
 }
 

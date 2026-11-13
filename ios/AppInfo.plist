@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Keys Xcode can't generate from build settings. Merged with the generated Info.plist. -->
+<dict>
+	<!-- chuckwagon://m/{id} opens a shared meal (the web page's "Open in Chuckwagon" button). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(CHUCKWAGON_URL_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
