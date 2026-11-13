@@ -122,6 +122,82 @@ export function shopperStoreId(chain: string, zip: string): string {
   return `${letters(chain).slice(0, 30)}-${zip}`;
 }
 
+/** Where a photo came from: a store we have, or (for a store we don't) the shopper's area and the store's name. */
+export interface ScanWhere {
+  storeId?: string;
+  /** Typed by the shopper when the store isn't in their list. The name printed on the photo wins when there is one. */
+  storeName?: string;
+  zip?: string;
+  lat?: number;
+  lng?: number;
+}
+
+/** A store a shopper is adding from a photo, found by name near their ZIP (it may already exist). */
+export interface ShopperStore {
+  ref: DocumentReference;
+  storeId: string;
+  chain: string;
+  /** Set when the store doc doesn't exist yet: what to write with shopperStoreDoc. */
+  newStore: { zip: string; lat?: number; lng?: number } | null;
+  /** The existing doc's dealsFrom / everydayFrom, if any. */
+  dealsFrom?: string;
+  everydayFrom?: string;
+}
+
+/**
+ * The store for a photo from a store that isn't in the shopper's list: named from the photo
+ * (or what the shopper typed), near their ZIP. Stores we load automatically are refused, so
+ * shoppers pick those from their list instead.
+ */
+export async function findShopperStore(db: Firestore, printed: string | null, where: ScanWhere, what: "ad" | "receipt"): Promise<ShopperStore> {
+  const zip = where.zip ?? "";
+  if (!/^\d{5}$/.test(zip)) throw new AdScanError("Set your ZIP code in Settings first.");
+  const typed = where.storeName?.replace(/\s+/g, " ").trim() ?? "";
+  const name = printed && letters(printed).length >= 2 ? printed : typed;
+  if (letters(name).length < 2) {
+    throw new AdScanError(
+      what === "ad"
+        ? "We couldn't find the store's name on this page. Type the store's name, or try the ad's front page."
+        : "We couldn't find the store's name on this receipt. Type the store's name and scan it again."
+    );
+  }
+  if (FEED_CHAINS.test(name)) {
+    throw new AdScanError(
+      what === "ad"
+        ? `We already get ${name}'s weekly ad automatically. Pick it from your stores to see the deals.`
+        : `${name} is already in Chuckwagon. Pick it from the store list and scan again.`
+    );
+  }
+  const chain = name.replace(/\s+/g, " ").trim().slice(0, 40);
+  const storeId = shopperStoreId(chain, zip);
+  const ref = db.doc(`stores/${storeId}`);
+  const existing = await ref.get();
+  return {
+    ref,
+    storeId,
+    chain: existing.exists ? String(existing.get("chain")) : chain,
+    newStore: existing.exists ? null : { zip, lat: where.lat, lng: where.lng },
+    dealsFrom: existing.exists ? (existing.get("dealsFrom") as string | undefined) : undefined,
+    everydayFrom: existing.exists ? (existing.get("everydayFrom") as string | undefined) : undefined,
+  };
+}
+
+/** The store doc for a store a shopper added from a photo. */
+export function shopperStoreDoc(chain: string, at: { zip: string; lat?: number; lng?: number }, uid: string, source: string, now: Timestamp) {
+  const { zip, lat, lng } = at;
+  return {
+    chain,
+    name: chain,
+    address: { addressLine1: source === SHOPPER_AD ? "Weekly ad from shoppers" : "Prices from shoppers' receipts", city: `near ${zip}`, zipCode: zip },
+    zip,
+    areaZips: [zip],
+    ...(typeof lat === "number" && typeof lng === "number" && lat !== 0 ? { geo: { lat, lng } } : {}),
+    source,
+    addedBy: uid,
+    updatedAt: now,
+  };
+}
+
 /** Where to save a scan's deals, after checking the shopper picked the right store. */
 interface Target {
   storeRef: DocumentReference;
@@ -132,11 +208,7 @@ interface Target {
   newStore: { zip: string; lat?: number; lng?: number } | null;
 }
 
-async function findTarget(
-  db: Firestore,
-  printed: string | null,
-  where: { storeId?: string; zip?: string; lat?: number; lng?: number }
-): Promise<Target> {
+async function findTarget(db: Firestore, printed: string | null, where: ScanWhere): Promise<Target> {
   if (where.storeId) {
     const store = await db.doc(`stores/${where.storeId}`).get();
     if (!store.exists) throw new AdScanError("That store wasn't found.");
@@ -147,26 +219,14 @@ async function findTarget(
     const dealStoreId = (store.get("dealsFrom") as string | undefined) ?? where.storeId;
     return { storeRef: store.ref, storeId: where.storeId, dealStoreId, chain, newStore: null };
   }
-  // A store we don't have yet: named from the ad, near the shopper's ZIP.
-  const zip = where.zip ?? "";
-  if (!/^\d{5}$/.test(zip)) throw new AdScanError("Set your ZIP code in Settings first.");
-  if (!printed || letters(printed).length < 2) {
-    throw new AdScanError("We couldn't find the store's name on this page. Try the ad's front page.");
-  }
-  if (FEED_CHAINS.test(printed)) {
-    throw new AdScanError(`We already get ${printed}'s weekly ad automatically. Pick it from your stores to see the deals.`);
-  }
-  const chain = printed.replace(/\s+/g, " ").trim().slice(0, 40);
-  const storeId = shopperStoreId(chain, zip);
-  const ref = db.doc(`stores/${storeId}`);
-  const existing = await ref.get();
-  const dealStoreId = existing.exists ? ((existing.get("dealsFrom") as string | undefined) ?? storeId) : storeId;
+  // A store we don't have yet: named from the ad (or by the shopper), near their ZIP.
+  const found = await findShopperStore(db, printed, where, "ad");
   return {
-    storeRef: ref,
-    storeId,
-    dealStoreId,
-    chain: existing.exists ? String(existing.get("chain")) : chain,
-    newStore: existing.exists ? null : { zip, lat: where.lat, lng: where.lng },
+    storeRef: found.ref,
+    storeId: found.storeId,
+    dealStoreId: found.dealsFrom ?? found.storeId,
+    chain: found.chain,
+    newStore: found.newStore,
   };
 }
 
@@ -174,7 +234,7 @@ export async function scanAd(
   db: Firestore,
   anthropic: Anthropic,
   uid: string,
-  where: { storeId?: string; zip?: string; lat?: number; lng?: number },
+  where: ScanWhere,
   imageBase64: string,
   mediaType: "image/jpeg" | "image/png" | "image/webp",
   today: string
@@ -239,20 +299,7 @@ export async function scanAd(
   const deals: ScannedDeal[] = [];
   await db.runTransaction(async (tx) => {
     const old = refs.length ? await tx.getAll(...refs) : [];
-    if (target.newStore) {
-      const { zip, lat, lng } = target.newStore;
-      tx.set(target.storeRef, {
-        chain: target.chain,
-        name: target.chain,
-        address: { addressLine1: "Weekly ad from shoppers", city: `near ${zip}`, zipCode: zip },
-        zip,
-        areaZips: [zip],
-        ...(typeof lat === "number" && typeof lng === "number" && lat !== 0 ? { geo: { lat, lng } } : {}),
-        source: SHOPPER_AD,
-        addedBy: uid,
-        updatedAt: now,
-      });
-    }
+    if (target.newStore) tx.set(target.storeRef, shopperStoreDoc(target.chain, target.newStore, uid, SHOPPER_AD, now));
     fresh.forEach((it, i) => {
       const prev = old[i];
       // Another shopper's scan of the same deal at the same price confirms it.
