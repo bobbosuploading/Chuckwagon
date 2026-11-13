@@ -56,9 +56,7 @@ function categorize(text: string): Category {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function toHebDeal(it: FlippItem, storeId: string, now: Timestamp): Deal {
-  const raw = it.current_price ? Number(it.current_price) : NaN;
-  // Some ads print cents ("69¢") and Flipp passes the 69 through as dollars.
-  const price = /¢/.test(it.price_text ?? "") && Number.isInteger(raw) && raw >= 1 ? raw / 100 : raw;
+  const price = it.current_price ? Number(it.current_price) : NaN;
   const salePrice = Number.isFinite(price) && price > 0 ? price : null;
   const savings = it.dollars_off ?? null;
   const regularPrice = salePrice !== null && savings !== null ? round2(salePrice + savings) : null;
