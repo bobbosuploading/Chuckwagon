@@ -6,6 +6,17 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 5 (0.1.0)
+========================================
+- Share a meal or a whole plan: on a plan, tap the share button at the top right to send the meals and grocery list, or open a meal and tap share to send just that recipe. Send it by Messages, email or anything else. When the other person taps the link, it opens right in their Chuckwagon app. If they don't have the app, they see the recipe on a web page with a link to join the beta.
+- Meals people share with you are saved under My plans, in "Shared with you", so you can find them again.
+- Meal plans start a little faster.
+[Sharing needs a Firebase deploy of functions (shareMealLink, sharePage), firestore rules
+(sharedMeals is readable by link) and hosting. Set the GitHub repo variable APPLE_TEAM_ID first so
+links open the app; see ios/README.md "Shared meal links". Until then links open the web page.]
+[Plans now record how long each step took (usage.timingsMs in the plans collection) so we can see what's slow.]
+
+========================================
 Build 4 (0.1.0)
 ========================================
 - The app now opens on a list of stores near you, closest first, with how far each one is and how many deals it has this week. Tap a store to see its deals and plan supper. Tap the star next to the stores you shop at to keep them at the top under "My stores". If a store has no deals yet, it names the closest store of that chain that does. To switch stores from the deals screen, tap the store's name, or go back to the list.

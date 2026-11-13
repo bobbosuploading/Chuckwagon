@@ -8,8 +8,8 @@ on:
       what:
         description: "What to deploy"
         type: choice
-        options: ["firestore,functions", "firestore", "functions"]
-        default: "firestore,functions"
+        options: ["firestore,functions,hosting", "firestore,functions", "firestore", "functions", "hosting"]
+        default: "firestore,functions,hosting"
 
 jobs:
   deploy:
@@ -38,6 +38,7 @@ jobs:
             echo "INSTACART_API_KEY=$INSTACART_API_KEY"
             echo "INSTACART_API_URL=$INSTACART_API_URL"
             echo "APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE:-false}"
+            if [ -n "$APPLE_TEAM_ID" ]; then echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"; fi
           } > .env
         env:
           KROGER_CLIENT_ID: ${{ secrets.KROGER_CLIENT_ID }}
@@ -46,6 +47,8 @@ jobs:
           INSTACART_API_URL: ${{ vars.INSTACART_API_URL }}
           # Repo variable: "true" makes the functions refuse calls from builds without App Check.
           APP_CHECK_ENFORCE: ${{ vars.APP_CHECK_ENFORCE }}
+          # Repo variable: the Apple Team ID, so shared meal links open the app (universal links).
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       - name: Deploy
         run: npx --yes firebase-tools@14 deploy --project chuckwagon-ebbcc --only "${{ inputs.what }}" --non-interactive --force
         env:

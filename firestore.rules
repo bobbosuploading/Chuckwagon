@@ -28,6 +28,12 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checked']);
       allow create: if false;
     }
+    // Meals and plans shared by link (copies, with no user id). Anyone with the link can open
+    // one by its random id, even before signing in; nobody can list them. Only the backend writes.
+    match /sharedMeals/{shareId} {
+      allow get: if true;
+      allow list, write: if false;
+    }
     // Each user can read their own account (premium status). Only the backend writes it.
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;

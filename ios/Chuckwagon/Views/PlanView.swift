@@ -90,7 +90,7 @@ struct PlanView: View {
                 if let options = plan.options {
                     Section {
                         ForEach(options.meals) { meal in
-                            MealPickRow(meal: meal, picked: options.chosen.contains(meal.name), busy: choosing) {
+                            MealPickRow(meal: meal, planId: plan.id, picked: options.chosen.contains(meal.name), busy: choosing) {
                                 toggle(meal.name)
                             }
                         }
@@ -105,7 +105,7 @@ struct PlanView: View {
                 } else {
                     ForEach(plan.meals) { meal in
                         NavigationLink {
-                            MealDetailView(meal: meal)
+                            MealDetailView(meal: meal, planId: plan.id)
                         } label: {
                             MealSummary(meal: meal)
                         }
@@ -118,6 +118,8 @@ struct PlanView: View {
             }
         }
         .creamBackground()
+        // Share the plan (its picked meals and grocery list) by link.
+        .mealSharing(planId: plan.id, meal: nil)
         .onChange(of: plan.groceryList.filter(\.checked).map(\.id)) { _, ids in
             Task { try? await Backend.saveChecked(planId: plan.id, itemIds: ids) }
         }
@@ -271,7 +273,7 @@ struct MealSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
-            Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter { $0.dealId != nil }.count) sale items")
+            Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter(\.isOnSale).count) sale items")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -280,6 +282,7 @@ struct MealSummary: View {
 /// A meal idea with a circle to pick or drop it. The rest of the row opens the recipe.
 struct MealPickRow: View {
     let meal: MealPlan.Meal
+    var planId: String?
     let picked: Bool
     let busy: Bool
     let onToggle: () -> Void
@@ -295,7 +298,7 @@ struct MealPickRow: View {
             .disabled(busy)
             .accessibilityLabel(picked ? "Drop \(meal.name)" : "Pick \(meal.name)")
             NavigationLink {
-                MealDetailView(meal: meal)
+                MealDetailView(meal: meal, planId: planId)
             } label: {
                 MealSummary(meal: meal)
                     .opacity(picked ? 1 : 0.6)
@@ -306,19 +309,27 @@ struct MealPickRow: View {
 
 struct MealDetailView: View {
     let meal: MealPlan.Meal
+    /// The shopper's own plan, so the meal can be shared by link. Nil for meals someone shared.
+    var planId: String? = nil
+    /// For a meal someone shared: the store its sale prices were from.
+    var sharedFrom: String? = nil
 
     var body: some View {
         List {
             Section {
                 Label("\(meal.timeMinutes) minutes", systemImage: "clock")
                 Label("Serves \(meal.servings)", systemImage: "person.2")
+            } footer: {
+                if let sharedFrom {
+                    Text("Shared with you from Chuckwagon. Items marked ON SALE were on sale at \(sharedFrom) that week.")
+                }
             }
             Section("Ingredients") {
                 ForEach(meal.ingredients, id: \.self) { ing in
                     HStack {
                         Text("\(ing.amount) \(ing.item)")
                         Spacer()
-                        if ing.dealId != nil {
+                        if ing.isOnSale {
                             Text("ON SALE")
                                 .font(.system(size: 10, weight: .black, design: .rounded))
                                 .foregroundStyle(Theme.ink)
@@ -338,6 +349,7 @@ struct MealDetailView: View {
             }
         }
         .creamBackground()
+        .mealSharing(planId: planId, meal: meal.name)
         .navigationTitle(meal.name)
         .navigationBarTitleDisplayMode(.inline)
     }

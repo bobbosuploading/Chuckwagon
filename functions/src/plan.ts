@@ -215,7 +215,13 @@ export interface MealPlan {
     /** True when the first plan was over budget and the model trimmed it. */
     revised: boolean;
   };
-  usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | null };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number | null;
+    /** How long each step took, in milliseconds (loading deals, each model draft, pricing), to see what to speed up. */
+    timingsMs?: Record<string, number>;
+  };
   createdAt: string;
 }
 
@@ -362,8 +368,11 @@ export async function planMeals(
   // Stores in a price region share one store's deals (see regions.ts): dealsFrom says whose.
   const dealSource = new Map<string, string>();
   const pricesNotes = new Map<string, string>();
-  for (const id of storeIds) {
-    const doc = await db.doc(`stores/${id}`).get();
+  const started = Date.now();
+  // Reads run side by side: one at a time added a second or two before the model even started.
+  const storeDocs = await Promise.all(storeIds.map((id) => db.doc(`stores/${id}`).get()));
+  for (const [i, id] of storeIds.entries()) {
+    const doc = storeDocs[i];
     if (!doc.exists) throw new Error(`Unknown store ${id}`);
     storeNames.set(id, doc.get("name"));
     storeChains.set(id, String(doc.get("chain") ?? ""));
@@ -382,33 +391,44 @@ export async function planMeals(
   const dealDocIds = new Map<string, string>(); // short id -> Firestore deals/{id}
   const loadedSources = new Set<string>();
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
-  for (const id of storeIds) {
-    // Two chosen stores in the same region have the same deals; load them once.
+  // Two chosen stores in the same region have the same deals; load them once.
+  const sourceStores = storeIds.filter((id) => {
     const source = dealSource.get(id)!;
-    if (loadedSources.has(source)) continue;
+    if (loadedSources.has(source)) return false;
     loadedSources.add(source);
-    for (const [category, limit] of Object.entries(DEALS_PER_CATEGORY)) {
-      const snap = await db
-        .collection("deals")
-        .where("storeId", "==", source)
-        .where("category", "==", category)
-        .orderBy("pctOff", "desc")
-        .limit(Math.ceil(limit! / storeIds.length))
-        .get();
-      snap.forEach((doc) => {
-        // Deals from shoppers' ad photos stay saved until the next scan clears them; skip ended ones.
-        const validTo = doc.get("validTo") as string | undefined;
-        if (validTo && validTo.slice(0, 10) < today) return;
-        const key = `d${deals.size + 1}`;
-        deals.set(key, { ...(doc.data() as Deal), storeId: id });
-        dealDocIds.set(key, doc.id);
-      });
-    }
+    return true;
+  });
+  // Every store and category at once, then added in the same order as before (store, then category).
+  const [dealSnaps, sharedLists] = await Promise.all([
+    Promise.all(
+      sourceStores.flatMap((id) =>
+        Object.entries(DEALS_PER_CATEGORY).map(([category, limit]) =>
+          db
+            .collection("deals")
+            .where("storeId", "==", dealSource.get(id)!)
+            .where("category", "==", category)
+            .orderBy("pctOff", "desc")
+            .limit(Math.ceil(limit! / storeIds.length))
+            .get()
+            .then((snap) => ({ id, snap }))
+        )
+      )
+    ),
+    Promise.all(storeIds.map((id) => liveSharedDeals(db, id, storeChains.get(id) ?? "", today))),
+  ]);
+  for (const { id, snap } of dealSnaps) {
+    snap.forEach((doc) => {
+      // Deals from shoppers' ad photos stay saved until the next scan clears them; skip ended ones.
+      const validTo = doc.get("validTo") as string | undefined;
+      if (validTo && validTo.slice(0, 10) < today) return;
+      const key = `d${deals.size + 1}`;
+      deals.set(key, { ...(doc.data() as Deal), storeId: id });
+      dealDocIds.set(key, doc.id);
+    });
   }
   // Deals shoppers shared from social media for these stores (sharedDeals.ts), a few each.
-  for (const id of storeIds) {
-    const shared = await liveSharedDeals(db, id, storeChains.get(id) ?? "", today);
-    shared
+  for (const [i] of storeIds.entries()) {
+    sharedLists[i]
       .sort((a, b) => b.pctOff - a.pctOff)
       .slice(0, Math.ceil(MAX_SHARED_DEALS / storeIds.length))
       .forEach((d) => {
@@ -419,6 +439,8 @@ export async function planMeals(
       });
   }
   if (deals.size === 0) throw new Error(`No current deals for ${storeIds.join(", ")}`);
+  const timingsMs: Record<string, number> = { loadDeals: Date.now() - started };
+  let drafts = 0;
 
   const lines = [...deals.entries()]
     .map(([id, d]) => dealLine(d, id, multi ? storeNames.get(d.storeId) : undefined))
@@ -446,6 +468,8 @@ ${lines}`;
 
   /** Asks the model for a plan, then prices its list from our own data. */
   const draft = async (messages: BetaMessageParam[]): Promise<PricedDraft> => {
+    const draftNo = ++drafts;
+    const modelStarted = Date.now();
     const response = await anthropic.beta.messages.parse({
       model,
       max_tokens: 16000,
@@ -456,6 +480,7 @@ ${lines}`;
       messages,
     });
     addTokens(response.model, response.usage.input_tokens, response.usage.output_tokens);
+    timingsMs[`draft${draftNo}`] = Date.now() - modelStarted;
 
     if (response.stop_reason === "refusal") throw new Error("The model declined to make this plan");
     if (response.stop_reason === "max_tokens") throw new Error("The plan was cut off (max_tokens)");
@@ -552,6 +577,7 @@ ${lines}`;
 
     // Price the items that aren't on sale from each store's everyday prices.
     const regular = groceryList.filter((li) => !li.onSale);
+    const pricingStarted = Date.now();
     const matched = await priceRegularItems(
       db,
       anthropic,
@@ -562,6 +588,7 @@ ${lines}`;
       return { prices: regular.map(() => null), inputTokens: 0, outputTokens: 0 };
     });
     addTokens(MATCH_MODEL, matched.inputTokens, matched.outputTokens);
+    timingsMs[`pricing${draftNo}`] = Date.now() - pricingStarted;
     regular.forEach((li, i) => {
       const p = matched.prices[i];
       if (!p) return;
@@ -660,6 +687,7 @@ ${lines}`;
       inputTokens,
       outputTokens,
       estimatedCostUsd: costUsd !== null ? Math.round(costUsd * 10000) / 10000 : null,
+      timingsMs: { ...timingsMs, total: Date.now() - started },
     },
     createdAt: new Date().toISOString(),
   };

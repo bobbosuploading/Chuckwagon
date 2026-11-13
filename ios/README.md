@@ -32,6 +32,27 @@ First archive after this was added (Mac, once):
 
 The dev app has no share extension. Use the "Share a deal" button on its home screen instead.
 
+## Shared meal links
+
+The share button on a plan or a meal makes a link like `https://chuckwagon-ebbcc.web.app/m/Ab3dEf7hJk`.
+The backend copies just that meal or plan into Firestore `sharedMeals/` (no user id, nothing else of the sender's).
+On an iPhone with Chuckwagon, the link opens the app (universal link). Anywhere else it opens a web page with
+the recipe, an "Open in Chuckwagon" button (`chuckwagon://m/...`) and the TestFlight link.
+
+One-time setup:
+
+1. GitHub repo > Settings > Secrets and variables > Actions > **Variables** > New variable:
+   `APPLE_TEAM_ID` = your 10-character Apple Team ID (developer.apple.com > Account > Membership details).
+2. Run the "Deploy to Firebase" workflow with `firestore,functions,hosting`. The first hosting deploy may stop with
+   "Hosting site not found": then open Firebase console > Hosting > **Get started** once (on the Mac), and run it again.
+3. Check `https://chuckwagon-ebbcc.web.app/.well-known/apple-app-site-association` shows your Team ID.
+4. Archive the next build. Xcode adds the **Associated Domains** capability from `project.yml` when it signs
+   (automatic signing). If Signing & Capabilities shows a red error, click "Try Again".
+
+Until steps 1 to 3 are done, links still work: they open the web page, and its "Open in Chuckwagon" button opens the app.
+iOS checks the Apple file when the app is installed or updated, so test with a build installed after the deploy.
+Tip: a universal link pasted into Safari's address bar opens the web page, not the app. Tap it in Messages or Notes.
+
 ## Dev app (test on your iPhone without touching TestFlight)
 
 There are two app targets built from the same code:
