@@ -28,6 +28,12 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checked']);
       allow create: if false;
     }
+    // Live progress of a plan being made, so the app can show meals as they're written.
+    // The app starts watching before the backend creates the doc, so a missing doc is allowed.
+    match /planProgress/{progressId} {
+      allow get: if request.auth != null && (resource == null || resource.data.uid == request.auth.uid);
+      allow list, write: if false;
+    }
     // Meals and plans shared by link (copies, with no user id). Anyone with the link can open
     // one by its random id, even before signing in; nobody can list them. Only the backend writes.
     match /sharedMeals/{shareId} {

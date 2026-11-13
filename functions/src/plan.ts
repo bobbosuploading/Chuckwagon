@@ -14,6 +14,7 @@ import type { Deal } from "./collectKroger";
 import { StockUp, stockUpTip } from "./stockUp";
 import { MATCH_MODEL, priceRegularItems } from "./priceItems";
 import { liveSharedDeals } from "./sharedDeals";
+import { MealStreamReader, PlanProgress } from "./planProgress";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -41,6 +42,8 @@ export interface PlanRequest {
    * and totals cover only the picked meals (see chooseMeals).
    */
   extraMeals?: number;
+  /** Optional: the app's id for watching this plan's progress (planProgress/{progressId}). */
+  progressId?: string;
 }
 
 /** At most this many extra meal ideas per plan, and this many meals in all. */
@@ -364,6 +367,8 @@ export interface PlanOptions {
   model?: string;
   /** How hard the planner thinks (for tests). Default "medium". */
   effort?: "low" | "medium" | "high";
+  /** Called as the plan takes shape (meals as they're written, then each step), for the app to show. */
+  onProgress?: (progress: PlanProgress) => void;
 }
 
 /**
@@ -382,6 +387,14 @@ export async function planMeals(
     typeof modelOverrideOrOptions === "string" ? { model: modelOverrideOrOptions } : modelOverrideOrOptions ?? {};
   const model = opts.model || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
   const effort = opts.effort ?? "medium";
+  const report = (progress: PlanProgress) => {
+    try {
+      opts.onProgress?.(progress);
+    } catch {
+      // Progress is only for show; never let it break a plan.
+    }
+  };
+  report({ stage: "thinking", meals: [] });
   const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
   const storeNames = new Map<string, string>();
   const storeChains = new Map<string, string>();
@@ -504,6 +517,16 @@ ${lines}`;
     stream.once("text", () => {
       timingsMs[`draft${draftNo}Thinking`] = Date.now() - modelStarted;
     });
+    // Show each meal as soon as it's written.
+    const reader = new MealStreamReader();
+    const progressMeals = () =>
+      reader.meals.map((m, i) => ({ name: m.name, timeMinutes: m.timeMinutes, extra: i >= mealCount }));
+    stream.on("text", (_delta, snapshot) => {
+      if (reader.done) return;
+      const found = reader.read(snapshot);
+      if (reader.done) report({ stage: "list", meals: progressMeals() });
+      else if (found > 0) report({ stage: "meals", meals: progressMeals() });
+    });
     let response;
     try {
       response = await stream.finalMessage();
@@ -615,6 +638,7 @@ ${lines}`;
 
     // Price the items that aren't on sale from each store's everyday prices.
     const regular = groceryList.filter((li) => !li.onSale);
+    report({ stage: "pricing", meals: progressMeals() });
     const pricingStarted = Date.now();
     const matched = await priceRegularItems(
       db,
@@ -651,6 +675,7 @@ ${lines}`;
   let revised = false;
   if (budget && first.estimatedTotal > budget) {
     try {
+      report({ stage: "budget", meals: [] });
       const second = await draft([
         ...messages,
         { role: "assistant", content: JSON.stringify(first.plan) },

@@ -120,7 +120,11 @@ async function main() {
   }
   const last = variants[variants.length - 1];
   if (last && !VARIANTS[last]) throw new Error(`Unknown variant ${last}`);
-  const plan = await planMeals(db, anthropic, req, { model, ...(last ? VARIANTS[last] : {}) });
+  // Log each progress update with how long after the start it came, to check meals show up early.
+  const started = Date.now();
+  const onProgress = (pr: { stage: string; meals: { name: string; extra: boolean }[] }) =>
+    console.log(`[progress ${((Date.now() - started) / 1000).toFixed(1)} s] ${pr.stage}: ${pr.meals.map((m) => m.name + (m.extra ? " (extra)" : "")).join(", ")}`);
+  const plan = await planMeals(db, anthropic, req, { model, onProgress, ...(last ? VARIANTS[last] : {}) });
   summary.push(timingTable(plan, last ? `Variant "${last}"` : "This plan"));
   const ref = await db.collection("plans").add({ ...plan, uid: "test" });
   md = `${summary.join("\n")}\n---\n\n${md}${last ? `# Variant "${last}"\n\n` : ""}${toMarkdown(plan)}\n\n_Saved as plans/${ref.id}_\n`;
