@@ -14,6 +14,7 @@ import type { Deal } from "./collectKroger";
 import { StockUp, stockUpTip } from "./stockUp";
 import { MATCH_MODEL, priceRegularItems } from "./priceItems";
 import { liveSharedDeals } from "./sharedDeals";
+import { MealStreamReader, PlanProgress } from "./planProgress";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -41,6 +42,8 @@ export interface PlanRequest {
    * and totals cover only the picked meals (see chooseMeals).
    */
   extraMeals?: number;
+  /** Optional: the app's id for watching this plan's progress (planProgress/{progressId}). */
+  progressId?: string;
 }
 
 /** At most this many extra meal ideas per plan, and this many meals in all. */
@@ -219,7 +222,11 @@ export interface MealPlan {
     inputTokens: number;
     outputTokens: number;
     estimatedCostUsd: number | null;
-    /** How long each step took, in milliseconds (loading deals, each model draft, pricing), to see what to speed up. */
+    /**
+     * How long each step took, in milliseconds (loading deals, each model draft, pricing), to see
+     * what to speed up. draftNThinking is when that draft's answer started arriving, and
+     * draftNOutputTokens (a count, not ms) is how much the model wrote, thinking included.
+     */
     timingsMs?: Record<string, number>;
   };
   createdAt: string;
@@ -423,13 +430,39 @@ ${priciest}
 Make a new plan that fits. Aim for $${Math.floor(budget * BUDGET_AIM * 0.95)} or less: swap pricey proteins for cheaper ones, cut extra packages, share more ingredients between meals, and drop a meal only if nothing else works. Return the complete plan again${d.plan.meals.length > d.chosen.length ? ", with the extra meal ideas after the main meals, kept just as cheap" : ""}.`;
 }
 
+export interface PlanOptions {
+  /** Model to use instead of the request's (for tests). */
+  model?: string;
+  /** How hard the planner thinks (for tests). Default "medium". */
+  effort?: "low" | "medium" | "high";
+  /** Called as the plan takes shape (meals as they're written, then each step), for the app to show. */
+  onProgress?: (progress: PlanProgress) => void;
+}
+
+/**
+ * Room for the planner's thinking plus the plan. Haiku often thinks past 16,000 tokens on a
+ * six-meal plan, which failed the whole plan as "cut off". Streaming allows more.
+ */
+const PLAN_MAX_TOKENS = 32000;
+
 export async function planMeals(
   db: Firestore,
   anthropic: Anthropic,
   req: PlanRequest,
-  modelOverride?: string
+  modelOverrideOrOptions?: string | PlanOptions
 ): Promise<MealPlan> {
-  const model = modelOverride || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
+  const opts: PlanOptions =
+    typeof modelOverrideOrOptions === "string" ? { model: modelOverrideOrOptions } : modelOverrideOrOptions ?? {};
+  const model = opts.model || (req.premium ? PREMIUM_MODEL : DEFAULT_MODEL);
+  const effort = opts.effort ?? "medium";
+  const report = (progress: PlanProgress) => {
+    try {
+      opts.onProgress?.(progress);
+    } catch {
+      // Progress is only for show; never let it break a plan.
+    }
+  };
+  report({ stage: "thinking", meals: [] });
   const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
   const storeNames = new Map<string, string>();
   const storeChains = new Map<string, string>();
@@ -538,17 +571,45 @@ ${lines}`;
   const draft = async (messages: BetaMessageParam[]): Promise<PricedDraft> => {
     const draftNo = ++drafts;
     const modelStarted = Date.now();
-    const response = await anthropic.beta.messages.parse({
+    // Streamed: needed for the larger max_tokens, and it shows when the answer itself starts.
+    const stream = anthropic.beta.messages.stream({
       model,
-      max_tokens: 16000,
+      max_tokens: PLAN_MAX_TOKENS,
       // If the model declines (very unlikely for recipes), the API retries on a fallback model.
       ...(FALLBACK_MODELS.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-      output_config: { effort: "medium", format: betaZodOutputFormat(PlanSchema) },
+      output_config: { effort, format: betaZodOutputFormat(PlanSchema) },
       system: SYSTEM,
       messages,
     });
-    addTokens(response.model, response.usage.input_tokens, response.usage.output_tokens);
-    timingsMs[`draft${draftNo}`] = Date.now() - modelStarted;
+    // Time until the plan itself starts arriving: roughly how long the model thought first.
+    stream.once("text", () => {
+      timingsMs[`draft${draftNo}Thinking`] = Date.now() - modelStarted;
+    });
+    // Show each meal as soon as it's written.
+    const reader = new MealStreamReader();
+    const progressMeals = () =>
+      reader.meals.map((m, i) => ({ name: m.name, timeMinutes: m.timeMinutes, extra: i >= mealCount }));
+    stream.on("text", (_delta, snapshot) => {
+      if (reader.done) return;
+      const found = reader.read(snapshot);
+      if (reader.done) report({ stage: "list", meals: progressMeals() });
+      else if (found > 0) report({ stage: "meals", meals: progressMeals() });
+    });
+    let response;
+    try {
+      response = await stream.finalMessage();
+    } catch (err) {
+      // A cut-off answer fails to parse inside the SDK; say why plainly.
+      throw stream.currentMessage?.stop_reason === "max_tokens" ? new Error("The plan was cut off (max_tokens)") : err;
+    } finally {
+      timingsMs[`draft${draftNo}`] = Date.now() - modelStarted;
+      // After a good answer the stream lets go of its snapshot, so use the answer itself.
+      const msg = response ?? stream.currentMessage;
+      if (msg?.usage) {
+        addTokens(msg.model, msg.usage.input_tokens, msg.usage.output_tokens);
+        timingsMs[`draft${draftNo}OutputTokens`] = msg.usage.output_tokens;
+      }
+    }
 
     if (response.stop_reason === "refusal") throw new Error("The model declined to make this plan");
     if (response.stop_reason === "max_tokens") throw new Error("The plan was cut off (max_tokens)");
@@ -645,6 +706,7 @@ ${lines}`;
 
     // Price the items that aren't on sale from each store's everyday prices.
     const regular = groceryList.filter((li) => !li.onSale);
+    report({ stage: "pricing", meals: progressMeals() });
     const pricingStarted = Date.now();
     const matched = await priceRegularItems(
       db,
@@ -681,6 +743,7 @@ ${lines}`;
   let revised = false;
   if (budget && first.estimatedTotal > budget) {
     try {
+      report({ stage: "budget", meals: [] });
       const second = await draft([
         ...messages,
         { role: "assistant", content: JSON.stringify(first.plan) },

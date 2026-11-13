@@ -11,13 +11,20 @@ Build 5 (0.1.0)
 - Share a meal or a whole plan: on a plan, tap the share button at the top right to send the meals and grocery list, or open a meal and tap share to send just that recipe. Send it by Messages, email or anything else. When the other person taps the link, it opens right in their Chuckwagon app. If they don't have the app, they see the recipe on a web page with a link to join the beta.
 - Meals people share with you are saved under My plans, in "Shared with you", so you can find them again.
 - Meal plans start a little faster.
+- Chef's pick plans no longer stop with "DEADLINE EXCEEDED". They can take a few minutes, so the app now waits for them, and if it does lose track of one, it checks for the finished plan and opens it. Try a Chef's pick plan with a second store turned on.
+- When something does go wrong, you'll see what to try instead of an error code.
+- While a meal plan is being made, you now see what step it's on, and each meal shows up as soon as it's picked, so you're not staring at a spinner for a minute. Try a Chef's pick plan, which takes the longest.
+- Everyday meal plans fail less often. Some used to stop with an error after about a minute of planning, especially with two stores and extra meal ideas.
 - Picking fewer meals now clears out the groceries for the meals you dropped. Before, some items from dropped meals stayed on the list and in the total, so a one-meal plan could show 14 items. To fix a plan you already have, tap any meal on the Meals tab to drop it or add it back, and the list rebuilds.
 - The plan header says "1 meal" instead of "1 meals".
+[That fix is server-only (Firebase deploy of functions); no new build needed for it.]
+[Live meal progress needs a Firebase deploy of firestore rules (planProgress) and functions. Older builds ignore it.]
 [Sharing needs a Firebase deploy of functions (shareMealLink, sharePage), firestore rules
 (sharedMeals is readable by link) and hosting. Set the GitHub repo variable APPLE_TEAM_ID first so
 links open the app; see ios/README.md "Shared meal links". Until then links open the web page.]
 [The meal-picking fix needs a Firebase deploy of functions (choosePlanMeals and planMealsForStore).]
 [Plans now record how long each step took (usage.timingsMs in the plans collection) so we can see what's slow.]
+[Needs a Firebase deploy of functions (planMealsForStore now gets 9 minutes).]
 
 ========================================
 Build 4 (0.1.0)

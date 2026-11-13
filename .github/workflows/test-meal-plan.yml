@@ -29,6 +29,12 @@ on:
       store:
         description: "Store id (blank for the first store)"
         default: ""
+      also_stores:
+        description: "More store ids, comma-separated (optional)"
+        default: ""
+      variants:
+        description: "Compare thinking efforts, comma-separated: medium, low, high (blank = the app's setting only)"
+        default: ""
 
 jobs:
   plan:
@@ -63,3 +69,5 @@ jobs:
           BUDGET: ${{ inputs.budget }}
           EXTRA: ${{ inputs.extra }}
           STORE_ID: ${{ inputs.store }}
+          STORE_IDS: ${{ inputs.also_stores }}
+          VARIANTS: ${{ inputs.variants }}

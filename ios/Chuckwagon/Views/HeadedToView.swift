@@ -12,6 +12,8 @@ struct HeadedToView: View {
     @State private var premium = false
     @State private var planning = false
     @State private var plan: MealPlan?
+    /// What the planner has done so far, while planning.
+    @State private var progress: PlanProgress?
     @State private var error: String?
 
     var body: some View {
@@ -20,22 +22,7 @@ struct HeadedToView: View {
                 if let plan {
                     PlanView(plan: plan)
                 } else if planning {
-                    VStack(spacing: 18) {
-                        Image(systemName: "frying.pan.fill")
-                            .font(.system(size: 44))
-                            .foregroundStyle(Theme.red)
-                            .symbolEffect(.bounce, options: .repeating)
-                        Text("Rustling up supper…")
-                            .font(Theme.title(24))
-                            .foregroundStyle(Theme.ink)
-                        Text("Matching this week's deals to meals your family will like.")
-                            .font(Theme.body(.subheadline))
-                            .foregroundStyle(Theme.ink.opacity(0.6))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Theme.cream.ignoresSafeArea())
+                    PlanProgressView(progress: progress)
                 } else {
                     form
                 }
@@ -137,11 +124,13 @@ struct HeadedToView: View {
         guard let storeId = store.id else { return }
         planning = true
         error = nil
+        progress = nil
         defer { planning = false }
         do {
-            plan = try await Backend.planMeals(storeId: storeId, alsoStoreIds: Array(alsoAt), prefs: prefs, haveAtHome: haveAtHome, premium: premium)
+            plan = try await Backend.planMeals(storeId: storeId, alsoStoreIds: Array(alsoAt), prefs: prefs, haveAtHome: haveAtHome, premium: premium,
+                                              onProgress: { progress = $0 })
         } catch {
-            self.error = error.localizedDescription
+            self.error = Backend.friendlyMessage(for: error, planning: true)
         }
     }
 }

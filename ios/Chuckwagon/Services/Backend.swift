@@ -77,7 +77,17 @@ enum Backend {
     }
 
     /// "Headed to [store]": asks the backend for meals and a grocery list.
-    static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false) async throws -> MealPlan {
+    /// `onProgress` gets live updates while the plan is made (meals as they're written, then
+    /// each step), on the main thread.
+    static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,
+                          onProgress: @escaping @MainActor @Sendable (PlanProgress) -> Void = { _ in }) async throws -> MealPlan {
+        // Watch planProgress/{id}; the backend writes it as the plan takes shape and deletes it when done.
+        let progressId = UUID().uuidString
+        let listener = db.collection("planProgress").document(progressId).addSnapshotListener { snap, _ in
+            guard let snap, snap.exists, let progress = try? snap.data(as: PlanProgress.self) else { return }
+            Task { @MainActor in onProgress(progress) }
+        }
+        defer { listener.remove() }
         var payload: [String: Any] = [
             "storeId": storeId,
             "storeIds": [storeId] + alsoStoreIds,
@@ -90,6 +100,7 @@ enum Backend {
             "premium": premium,
             // A couple of spare meals to swap in, so a meal you don't like doesn't mean a new plan.
             "extraMeals": extraMealIdeas,
+            "progressId": progressId,
         ]
         if prefs.weeklyBudget > 0 {
             payload["budget"] = prefs.weeklyBudget
@@ -97,8 +108,39 @@ enum Backend {
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
         }
-        let result = try await Functions.functions().httpsCallable("planMealsForStore").call(payload)
-        return try decodePlan(result.data)
+        let callable = Functions.functions().httpsCallable("planMealsForStore")
+        // A Chef's pick plan can take several minutes; the function itself allows 540 s.
+        callable.timeoutInterval = 560
+        let started = Date.now
+        do {
+            return try decodePlan(try await callable.call(payload).data)
+        } catch where isTimeout(error) || isConnectionLost(error) {
+            // The plan may still finish and be saved on the server. Look for it before giving up.
+            if let plan = try? await findPlan(madeAfter: started, waitingUntil: started.addingTimeInterval(600)) {
+                return plan
+            }
+            throw error
+        }
+    }
+
+    /// Looks for a plan of this user's saved after `date`, checking every 10 seconds until
+    /// `deadline`. Used when the app stopped waiting but the server kept going.
+    private static func findPlan(madeAfter date: Date, waitingUntil deadline: Date) async throws -> MealPlan? {
+        // A little slack for the phone's clock being ahead of the server's.
+        let since = date.addingTimeInterval(-30)
+        while true {
+            if let plan = try await myPlans().first(where: { ($0.createdDate ?? .distantPast) > since }) {
+                return plan
+            }
+            if Date.now >= deadline { return nil }
+            try await Task.sleep(for: .seconds(10))
+        }
+    }
+
+    private static func isTimeout(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == FunctionsErrorDomain { return FunctionsErrorCode(rawValue: error.code) == .deadlineExceeded }
+        return error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut
     }
 
     /// How many extra meal ideas each plan comes with.
@@ -339,8 +381,10 @@ enum Backend {
 
     /// Words a shopper can act on, instead of "DEADLINE EXCEEDED" or "INTERNAL".
     /// Our functions already send friendly words for problems the shopper can fix.
-    static func friendlyMessage(for error: Error) -> String {
+    /// `planning` is for meal plans, where a timeout means the model was slow, not the signal.
+    static func friendlyMessage(for error: Error, planning: Bool = false) -> String {
         let nsError = error as NSError
+        let slowMessage = planning ? slowPlanMessage : slowMessage
         if nsError.domain == NSURLErrorDomain {
             return nsError.code == NSURLErrorTimedOut ? slowMessage : offlineMessage
         }
@@ -360,6 +404,7 @@ enum Backend {
     }
 
     private static let slowMessage = "That took too long, probably because of a weak signal. Try again on Wi-Fi or where you have better service."
+    private static let slowPlanMessage = "Your plan is taking longer than usual. If it finishes, it will show up in My plans. Otherwise, please try again in a few minutes."
     private static let offlineMessage = "Couldn't reach Chuckwagon. Check your connection and try again."
 
     private static func decodePlan(_ object: Any) throws -> MealPlan {
