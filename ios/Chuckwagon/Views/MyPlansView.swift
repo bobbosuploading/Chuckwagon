@@ -6,6 +6,7 @@ struct MyPlansView: View {
     @State private var plans: [MealPlan] = []
     @State private var loading = true
     @State private var error: String?
+    @State private var shared: [SharedInbox.Item] = []
 
     var body: some View {
         NavigationStack {
@@ -14,21 +15,37 @@ struct MyPlansView: View {
                     ProgressView()
                 } else if let error {
                     ContentUnavailableView("Couldn't load your plans", systemImage: "exclamationmark.triangle", description: Text(error))
-                } else if plans.isEmpty {
+                } else if plans.isEmpty && shared.isEmpty {
                     ContentUnavailableView("No plans yet", systemImage: "list.bullet.clipboard",
                                            description: Text("Tap \"Headed to\" to make your first one. It will be saved here."))
                 } else {
                     List {
-                        ForEach(plans) { plan in
-                            NavigationLink {
-                                PlanView(plan: plan)
-                                    .navigationTitle(plan.storeName)
-                                    .navigationBarTitleDisplayMode(.inline)
-                            } label: {
-                                PlanRow(plan: plan)
+                        if !shared.isEmpty {
+                            Section("Shared with you") {
+                                ForEach(shared) { item in
+                                    NavigationLink {
+                                        SharedMealsScreen(id: item.id)
+                                    } label: {
+                                        SharedWithYouRow(item: item)
+                                    }
+                                }
+                                .onDelete(perform: deleteShared)
                             }
                         }
-                        .onDelete(perform: delete)
+                        Section {
+                            ForEach(plans) { plan in
+                                NavigationLink {
+                                    PlanView(plan: plan)
+                                        .navigationTitle(plan.storeName)
+                                        .navigationBarTitleDisplayMode(.inline)
+                                } label: {
+                                    PlanRow(plan: plan)
+                                }
+                            }
+                            .onDelete(perform: delete)
+                        } header: {
+                            if !shared.isEmpty && !plans.isEmpty { Text("Your plans") }
+                        }
                     }
                     .creamBackground()
                 }
@@ -44,7 +61,15 @@ struct MyPlansView: View {
     private func load() async {
         loading = true
         defer { loading = false }
+        shared = SharedInbox.items()
         do { plans = try await Backend.myPlans() } catch { self.error = error.localizedDescription }
+    }
+
+    /// Removes shared meals from this list only; the link still works.
+    private func deleteShared(at offsets: IndexSet) {
+        let ids = offsets.map { shared[$0].id }
+        shared.remove(atOffsets: offsets)
+        SharedInbox.remove(ids: ids)
     }
 
     private func delete(at offsets: IndexSet) {
