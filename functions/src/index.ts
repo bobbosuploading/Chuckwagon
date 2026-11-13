@@ -6,6 +6,7 @@ import * as logger from "firebase-functions/logger";
 import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
+import type { PlanProgress } from "./planProgress";
 import { ReceiptError, scanReceipt } from "./receipts";
 import { AdScanError, scanAd } from "./adScans";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
@@ -150,15 +151,32 @@ export const planMealsForStore = onCall(
     const data = request.data as PlanRequest;
     if (!data?.storeId) throw new HttpsError("invalid-argument", "storeId is required");
     const db = getFirestore();
-    await reservePlan(db, request.auth.uid, data.premium === true);
+    const uid = request.auth.uid;
+    await reservePlan(db, uid, data.premium === true);
+    // Live progress the app watches while it waits (planProgress/{progressId}, readable only by
+    // this user). Writes go one at a time, in order, and never hold up or fail the plan.
+    const progressId = typeof data.progressId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(data.progressId) ? data.progressId : null;
+    const progressRef = progressId ? db.collection("planProgress").doc(progressId) : null;
+    let progressWrites: Promise<unknown> = Promise.resolve();
+    const onProgress = progressRef
+      ? (p: PlanProgress) => {
+          progressWrites = progressWrites
+            .then(() => progressRef.set({ uid, ...p, updatedAt: new Date() }))
+            .catch((err) => logger.warn("Progress write failed", err));
+        }
+      : undefined;
+    const { progressId: _progressId, ...req } = data;
     try {
-      const plan = await planMeals(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), data);
-      const ref = await db.collection("plans").add({ ...plan, uid: request.auth.uid });
+      const plan = await planMeals(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), req, { onProgress });
+      const ref = await db.collection("plans").add({ ...plan, uid });
       logger.info("Plan created", { id: ref.id, model: plan.model, usage: plan.usage });
       return { id: ref.id, ...plan };
     } catch (err) {
       logger.error("Plan failed", err);
       throw new HttpsError("internal", "We couldn't make that plan just now. Please try again in a minute.");
+    } finally {
+      // The app has the plan (or the error) now, so the progress doc isn't needed.
+      if (progressRef) await progressWrites.then(() => progressRef.delete()).catch(() => undefined);
     }
   }
 );

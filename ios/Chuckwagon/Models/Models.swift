@@ -385,3 +385,18 @@ struct SharedMeals: Codable, Hashable {
 
     var isPlan: Bool { kind == "plan" }
 }
+
+/// Live progress of a plan being made (Firestore `planProgress/{id}`), so the waiting screen
+/// can show meals as the planner writes them.
+struct PlanProgress: Codable, Hashable {
+    /// "thinking", "meals", "list", "pricing" or "budget".
+    var stage: String
+    var meals: [ProgressMeal]
+
+    struct ProgressMeal: Codable, Hashable {
+        var name: String
+        var timeMinutes: Int
+        /// An extra idea to swap in, not one of the main meals.
+        var extra: Bool
+    }
+}

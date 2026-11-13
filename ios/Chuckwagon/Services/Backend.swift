@@ -77,7 +77,17 @@ enum Backend {
     }
 
     /// "Headed to [store]": asks the backend for meals and a grocery list.
-    static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false) async throws -> MealPlan {
+    /// `onProgress` gets live updates while the plan is made (meals as they're written, then
+    /// each step), on the main thread.
+    static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,
+                          onProgress: @escaping @MainActor @Sendable (PlanProgress) -> Void = { _ in }) async throws -> MealPlan {
+        // Watch planProgress/{id}; the backend writes it as the plan takes shape and deletes it when done.
+        let progressId = UUID().uuidString
+        let listener = db.collection("planProgress").document(progressId).addSnapshotListener { snap, _ in
+            guard let snap, snap.exists, let progress = try? snap.data(as: PlanProgress.self) else { return }
+            Task { @MainActor in onProgress(progress) }
+        }
+        defer { listener.remove() }
         var payload: [String: Any] = [
             "storeId": storeId,
             "storeIds": [storeId] + alsoStoreIds,
@@ -90,6 +100,7 @@ enum Backend {
             "premium": premium,
             // A couple of spare meals to swap in, so a meal you don't like doesn't mean a new plan.
             "extraMeals": extraMealIdeas,
+            "progressId": progressId,
         ]
         if prefs.weeklyBudget > 0 {
             payload["budget"] = prefs.weeklyBudget
