@@ -3,14 +3,44 @@
  *
  * Env: ANTHROPIC_API_KEY, GOOGLE_APPLICATION_CREDENTIALS (Firebase service account),
  *      optional STORE_ID (defaults to the first store), MODEL, MEALS, HOUSEHOLD, DIET, DISLIKES, BUDGET,
- *      EXTRA (extra meal ideas; the summary then also shows a swap of the last main meal).
+ *      EXTRA (extra meal ideas; the summary then also shows a swap of the last main meal),
+ *      STORE_IDS (more stores, comma-separated), VARIANTS (comma-separated thinking efforts to
+ *      make the plan with, one after another, to compare timing and quality: medium, low, high).
  * Saves the plan to plans/{id} and prints a readable summary (also to the GitHub job summary).
  */
 import { appendFileSync } from "node:fs";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
-import { chooseMeals, MealPlan, planMeals } from "./plan";
+import { chooseMeals, MealPlan, planMeals, PlanOptions, PlanRequest } from "./plan";
+
+const VARIANTS: Record<string, Omit<PlanOptions, "model">> = {
+  medium: {},
+  low: { effort: "low" },
+  high: { effort: "high" },
+};
+
+function timingTable(p: MealPlan, title: string): string {
+  const t = p.usage.timingsMs;
+  if (!t) return "";
+  const sec = (ms?: number) => (ms === undefined ? "" : `${(ms / 1000).toFixed(1)} s`);
+  const rows: string[] = [];
+  for (let n = 1; t[`draft${n}`] !== undefined; n++) {
+    rows.push(
+      `| ${n === 1 ? "plan" : "budget redraft"} | ${sec(t[`draft${n}`])} | ${sec(t[`draft${n}Thinking`])} | ${t[`draft${n}OutputTokens`] ?? ""} |`,
+      `| pricing everyday items | ${sec(t[`pricing${n}`])} | | |`
+    );
+  }
+  return [
+    `### ${title}: ${sec(t.total)} in all`,
+    `Loading stores and deals: ${sec(t.loadDeals)}. Model: ${p.model}. Cost about $${p.usage.estimatedCostUsd ?? "?"}.`,
+    "",
+    "| Step | Time | Answer started after | Tokens written |",
+    "|---|---|---|---|",
+    ...rows,
+    "",
+  ].join("\n");
+}
 
 function toMarkdown(p: MealPlan): string {
   const out: string[] = [];
@@ -62,22 +92,38 @@ async function main() {
     storeId = first.docs[0].id;
   }
   const num = (v?: string) => (v ? Number(v) : undefined);
-  const plan = await planMeals(
-    db,
-    new Anthropic(),
-    {
-      storeId,
-      mealCount: num(process.env.MEALS),
-      householdSize: num(process.env.HOUSEHOLD),
-      diet: process.env.DIET,
-      dislikes: process.env.DISLIKES,
-      budget: num(process.env.BUDGET),
-      extraMeals: num(process.env.EXTRA),
-    },
-    process.env.MODEL || undefined
-  );
+  const req: PlanRequest = {
+    storeId,
+    storeIds: [storeId, ...(process.env.STORE_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean)],
+    mealCount: num(process.env.MEALS),
+    householdSize: num(process.env.HOUSEHOLD),
+    diet: process.env.DIET,
+    dislikes: process.env.DISLIKES,
+    budget: num(process.env.BUDGET),
+    extraMeals: num(process.env.EXTRA),
+  };
+  const anthropic = new Anthropic();
+  const model = process.env.MODEL || undefined;
+  let md = "";
+  // Extra variants run first, back to back, so they see the same deals and nearly the same service speed.
+  const variants = (process.env.VARIANTS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+  const summary: string[] = [];
+  for (const v of variants.slice(0, -1)) {
+    if (!VARIANTS[v]) throw new Error(`Unknown variant ${v}`);
+    try {
+      const p = await planMeals(db, anthropic, req, { model, ...VARIANTS[v] });
+      summary.push(timingTable(p, `Variant "${v}"`));
+      md += `# Variant "${v}"\n\n${toMarkdown(p)}\n\n---\n\n`;
+    } catch (err) {
+      summary.push(`### Variant "${v}" failed: ${(err as Error).message}\n`);
+    }
+  }
+  const last = variants[variants.length - 1];
+  if (last && !VARIANTS[last]) throw new Error(`Unknown variant ${last}`);
+  const plan = await planMeals(db, anthropic, req, { model, ...(last ? VARIANTS[last] : {}) });
+  summary.push(timingTable(plan, last ? `Variant "${last}"` : "This plan"));
   const ref = await db.collection("plans").add({ ...plan, uid: "test" });
-  let md = toMarkdown(plan) + `\n\n_Saved as plans/${ref.id}_\n`;
+  md = `${summary.join("\n")}\n---\n\n${md}${last ? `# Variant "${last}"\n\n` : ""}${toMarkdown(plan)}\n\n_Saved as plans/${ref.id}_\n`;
   const opts = plan.options;
   if (opts) {
     const extras = opts.meals.filter((m) => !opts.chosen.includes(m.name));
