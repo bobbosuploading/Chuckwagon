@@ -245,8 +245,8 @@ enum Backend {
         var data: [String: Any] = ["imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"]
         addStore(to: &data, storeId: storeId, storeName: storeName, zip: zip, latitude: latitude, longitude: longitude)
         let result = try await callPhotoFunction("scanReceiptPhoto", data)
-        let data = try JSONSerialization.data(withJSONObject: result.data)
-        return try JSONDecoder().decode(ReceiptScan.self, from: data)
+        let json = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(ReceiptScan.self, from: json)
     }
 
     /// What a weekly ad scan read. Prices are per item, or per lb when soldBy is "WEIGHT".
