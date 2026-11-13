@@ -26,7 +26,7 @@ export const AD_CHAINS: AdChain[] = [
   // ALDI was not on Flipp near 77437 (Nov 2026), so it loads nothing there for now.
   { key: "aldi", chain: "ALDI", merchant: /^aldi\b/i },
   { key: "dollargeneral", chain: "Dollar General", merchant: /dollar general/i },
-  // West Texas, the Panhandle and New Mexico (Nov 2026: none near 77437). "Lowe's" alone is the hardware store.
+  // Includes East Bernard, Needville and Palacios near 77437 (Nov 2026). "Lowe's" alone is the hardware store.
   { key: "lowesmarket", chain: "Lowe's Market", merchant: /^lowe.?s market/i },
 ];
 
