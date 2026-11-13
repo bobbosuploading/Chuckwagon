@@ -142,7 +142,9 @@ export const redeemTesterCode = onCall(async (request) => {
  * Saves the plan to plans/{id} and returns it.
  */
 export const planMealsForStore = onCall(
-  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: "512MiB" },
+  // A Chef's pick (Opus) plan across two stores can take a few minutes, more when it redrafts
+  // to fit a budget. The app waits a little longer than this (Backend.planMeals).
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: "512MiB" },
   async (request) => {
     requireApp(request, "planMealsForStore");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to plan meals");
@@ -171,7 +173,7 @@ export const planMealsForStore = onCall(
       return { id: ref.id, ...plan };
     } catch (err) {
       logger.error("Plan failed", err);
-      throw new HttpsError("internal", (err as Error).message);
+      throw new HttpsError("internal", "We couldn't make that plan just now. Please try again in a minute.");
     } finally {
       // The app has the plan (or the error) now, so the progress doc isn't needed.
       if (progressRef) await progressWrites.then(() => progressRef.delete()).catch(() => undefined);

@@ -130,7 +130,7 @@ struct HeadedToView: View {
             plan = try await Backend.planMeals(storeId: storeId, alsoStoreIds: Array(alsoAt), prefs: prefs, haveAtHome: haveAtHome, premium: premium,
                                               onProgress: { progress = $0 })
         } catch {
-            self.error = error.localizedDescription
+            self.error = Backend.friendlyMessage(for: error, planning: true)
         }
     }
 }
