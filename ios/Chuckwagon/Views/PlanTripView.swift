@@ -17,6 +17,8 @@ struct PlanTripView: View {
     @State private var picked: [String] = []
     @State private var didPickDefaults = false
     @State private var haveAtHome = ""
+    /// Saved meals to build the plan around.
+    @State private var included: [MealPlan.Meal] = []
     @State private var premium = false
     @State private var planning = false
     @State private var plan: MealPlan?
@@ -77,7 +79,7 @@ struct PlanTripView: View {
         return Form {
             storesSection
             Section {
-                Stepper("Meals: \(prefs.mealCount)", value: $prefs.mealCount, in: 1...7)
+                Stepper("Meals: \(prefs.mealCount)", value: $prefs.mealCount, in: max(1, included.count)...7)
                 Stepper("People: \(prefs.householdSize)", value: $prefs.householdSize, in: 1...10)
                 Picker("Diet", selection: $prefs.diet) {
                     ForEach(Preferences.diets, id: \.self) { Text($0) }
@@ -115,6 +117,7 @@ struct PlanTripView: View {
                      ? "We'll build the meals and the whole list to fit, sale and everyday items together."
                      : "Turn this on and we'll plan around what you have to spend this trip.")
             }
+            includedSection
             Section {
                 TextField("e.g. rice, eggs, onions", text: $haveAtHome, axis: .vertical)
             } header: {
@@ -140,6 +143,36 @@ struct PlanTripView: View {
             .disabled(picked.isEmpty)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
+        }
+    }
+
+    private var includedSection: some View {
+        Section {
+            ForEach(included) { meal in
+                HStack {
+                    Image(systemName: "fork.knife").foregroundStyle(Theme.red)
+                    Text(meal.name)
+                    Spacer()
+                    Button {
+                        included.removeAll { $0.name == meal.name }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.ink.opacity(0.35))
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Take \(meal.name) out")
+                }
+            }
+            NavigationLink {
+                SavedMealPicker(selection: $included, max: prefs.mealCount)
+            } label: {
+                Label(included.isEmpty ? "Pick saved meals" : "Change saved meals", systemImage: "book.closed")
+            }
+        } header: {
+            Text("Meals to include")
+        } footer: {
+            Text(included.isEmpty
+                 ? "Optional. Pick meals you've liked before and we'll plan the rest around them, buying their ingredients on sale where we can."
+                 : "\(included.count) of your \(prefs.mealCount) meals. We'll buy their ingredients on sale where we can and plan the other \(prefs.mealCount - included.count) around them.")
         }
     }
 
@@ -212,7 +245,7 @@ struct PlanTripView: View {
         defer { planning = false }
         do {
             plan = try await Backend.planMeals(storeId: main, alsoStoreIds: Array(picked.dropFirst()), prefs: prefs, haveAtHome: haveAtHome,
-                                              premium: premium, onProgress: { progress = $0 })
+                                              premium: premium, includeMeals: included, onProgress: { progress = $0 })
         } catch {
             self.error = Backend.friendlyMessage(for: error, planning: true)
         }
