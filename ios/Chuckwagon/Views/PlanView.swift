@@ -170,7 +170,7 @@ struct PlanView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(plan.meals.count) meals").font(Theme.body(.subheadline, weight: .bold)).foregroundStyle(.white)
+                Text("\(plan.meals.count) \(plan.meals.count == 1 ? "meal" : "meals")").font(Theme.body(.subheadline, weight: .bold)).foregroundStyle(.white)
                 if let total = plan.totals.estimatedTotal, total > plan.totals.saleItems {
                     Text("About \(total.dollars) total").font(Theme.body(.caption, weight: .bold)).foregroundStyle(.white)
                 }
