@@ -6,6 +6,14 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 6 (0.1.0)
+========================================
+- Scan a receipt or a weekly ad from any store near you. The "Store" list on the scan screen now shows every nearby store, not just your starred ones.
+- Shopped somewhere that isn't in the list, like Brookshire Brothers? Pick "Another store" and scan the receipt. We read the store's name from the receipt (or type it in) and add the store near you with its prices. Weekly ads work the same way.
+- Lowe's Market's weekly ad now loads on its own for people near a Lowe's Market (East Bernard, Needville, Palacios and more).
+[Needs a Firebase deploy of functions (scanReceiptPhoto, scanAdPhoto) before this build reaches testers, or "Another store" receipts fail.]
+
+========================================
 Build 5 (0.1.0)
 ========================================
 - Share a meal or a whole plan: on a plan, tap the share button at the top right to send the meals and grocery list, or open a meal and tap share to send just that recipe. Send it by Messages, email or anything else. When the other person taps the link, it opens right in their Chuckwagon app. If they don't have the app, they see the recipe on a web page with a link to join the beta.

@@ -106,8 +106,9 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showingStockUpTrip) { StockUpTripView() }
         .sheet(isPresented: $showingReceipt, onDismiss: { Task { await loadStores(); await load() } }) {
-            ReceiptScanView(store: currentStore, myStores: myStores) { added in
-                // A store added from an ad photo: show it now, even if favorites would hide it.
+            // Every nearby store, not just starred ones: a receipt or ad can be from any of them.
+            ReceiptScanView(store: currentStore, myStores: prefs.nearby(stores)) { added in
+                // A store added from a photo: show it now, even if favorites would hide it.
                 if !prefs.favoriteStoreIds.isEmpty, !prefs.favoriteStoreIds.contains(added) {
                     prefs.favoriteStoreIds.append(added)
                 }

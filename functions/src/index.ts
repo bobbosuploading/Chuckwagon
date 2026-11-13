@@ -229,12 +229,16 @@ export const scanReceiptPhoto = onCall(
   async (request) => {
     requireApp(request, "scanReceiptPhoto");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan receipts");
-    const { storeId, imageBase64, mediaType } = (request.data ?? {}) as {
+    const { storeId, storeName, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
       storeId?: string;
+      storeName?: string;
+      zip?: string;
+      lat?: number;
+      lng?: number;
       imageBase64?: string;
       mediaType?: string;
     };
-    if (!storeId || !imageBase64) throw new HttpsError("invalid-argument", "storeId and imageBase64 are required");
+    if ((!storeId && !zip) || !imageBase64) throw new HttpsError("invalid-argument", "storeId or zip, and imageBase64, are required");
     if (imageBase64.length > 7_000_000) throw new HttpsError("invalid-argument", "That photo is too large.");
     const type = (["image/jpeg", "image/png", "image/webp"].includes(mediaType ?? "") ? mediaType : "image/jpeg") as
       "image/jpeg" | "image/png" | "image/webp";
@@ -257,8 +261,15 @@ export const scanReceiptPhoto = onCall(
     });
 
     try {
-      const result = await scanReceipt(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, storeId, imageBase64, type);
-      logger.info("Receipt scanned", { uid, storeId, items: result.items.length, receiptId: result.receiptId });
+      const where = {
+        storeId: storeId || undefined,
+        storeName: typeof storeName === "string" ? storeName.slice(0, 60) : undefined,
+        zip: zip ? String(zip).trim() : undefined,
+        lat: typeof lat === "number" && Number.isFinite(lat) ? lat : undefined,
+        lng: typeof lng === "number" && Number.isFinite(lng) ? lng : undefined,
+      };
+      const result = await scanReceipt(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, where, imageBase64, type);
+      logger.info("Receipt scanned", { uid, storeId: result.storeId, newStore: result.newStore, items: result.items.length, receiptId: result.receiptId });
       return { ...result, reward: await rewardReceipt(db, uid, day, result.duplicate, result.items.length) };
     } catch (err) {
       logger.warn("Receipt scan failed", err);
@@ -282,8 +293,9 @@ export const scanAdPhoto = onCall(
   async (request) => {
     requireApp(request, "scanAdPhoto");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan ads");
-    const { storeId, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
+    const { storeId, storeName, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
       storeId?: string;
+      storeName?: string;
       zip?: string;
       lat?: number;
       lng?: number;
@@ -315,6 +327,7 @@ export const scanAdPhoto = onCall(
     try {
       const where = {
         storeId: storeId || undefined,
+        storeName: typeof storeName === "string" ? storeName.slice(0, 60) : undefined,
         zip: zip ? String(zip).trim() : undefined,
         lat: typeof lat === "number" && Number.isFinite(lat) ? lat : undefined,
         lng: typeof lng === "number" && Number.isFinite(lng) ? lng : undefined,

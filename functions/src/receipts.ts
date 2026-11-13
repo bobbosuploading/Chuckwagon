@@ -10,12 +10,13 @@ import { Firestore, Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { fitToDoc, loadPriceBook, PriceBookItem, words } from "./priceBook";
 import { AdPrice, checkLine, SaleReason } from "./receiptSales";
+import { AdScanError, findShopperStore, ScanWhere, shopperStoreDoc } from "./adScans";
 
 export const RECEIPT_MODEL = "claude-haiku-5-5";
 
 const ReceiptSchema = z.object({
   isReceipt: z.boolean().describe("False if the image is not a grocery store receipt"),
-  storeName: z.string().nullable(),
+  storeName: z.string().nullable().describe("The store chain's name as printed at the top, e.g. 'Brookshire Brothers'. Leave out store numbers and addresses."),
   date: z.string().nullable().describe("Purchase date as YYYY-MM-DD, if printed"),
   items: z.array(
     z.object({
@@ -60,6 +61,10 @@ export interface ScannedItem extends PriceBookItem {
 export interface ScanResult {
   /** True when this receipt was already scanned (no reward). */
   duplicate: boolean;
+  /** The store the prices were saved under. */
+  storeId: string;
+  /** True when this scan added the store (a store that wasn't in the shopper's list). */
+  newStore: boolean;
   receiptId: string;
   storeName: string | null;
   date: string | null;
@@ -75,12 +80,15 @@ export async function scanReceipt(
   db: Firestore,
   anthropic: Anthropic,
   uid: string,
-  storeId: string,
+  where: ScanWhere,
   imageBase64: string,
   mediaType: "image/jpeg" | "image/png" | "image/heic" | "image/webp"
 ): Promise<ScanResult> {
-  const store = await db.doc(`stores/${storeId}`).get();
-  if (!store.exists) throw new ReceiptError("We don't know that store. Pick it again on the home screen.");
+  // A store from the shopper's list, or (storeId missing) one named on the receipt or typed by the shopper.
+  const store = where.storeId ? await db.doc(`stores/${where.storeId}`).get() : null;
+  if (store && !store.exists) throw new ReceiptError("We don't know that store. Pick it again on the home screen.");
+  const typed = where.storeName?.replace(/\s+/g, " ").trim();
+  const fromName = store ? String(store.get("name")) : typed || null;
 
   const response = await anthropic.beta.messages.parse({
     model: RECEIPT_MODEL,
@@ -93,7 +101,7 @@ export async function scanReceipt(
         content: [
           // HEIC isn't accepted by the API; the app sends JPEG.
           { type: "image", source: { type: "base64", media_type: mediaType === "image/heic" ? "image/jpeg" : mediaType, data: imageBase64 } },
-          { type: "text", text: `Receipt from ${store.get("name")}. List the products and prices.` },
+          { type: "text", text: `${fromName ? `Receipt from ${fromName}.` : "A grocery receipt."} List the products and prices.` },
         ],
       },
     ],
@@ -102,8 +110,23 @@ export async function scanReceipt(
   if (!r) throw new ReceiptError("Couldn't read that receipt. Try a flatter, brighter photo.");
   if (!r.isReceipt) throw new ReceiptError("That doesn't look like a grocery receipt.");
 
+  let found = null;
+  if (!store) {
+    try {
+      // What the shopper typed wins here: receipt headers vary more than ad logos.
+      found = await findShopperStore(db, typed || r.storeName, where, "receipt");
+    } catch (err) {
+      if (err instanceof AdScanError) throw new ReceiptError(err.message);
+      throw err;
+    }
+  }
+  const storeId = store ? store.id : found!.storeId;
+  const chain = store ? ((store.get("chain") as string | undefined) ?? null) : found!.chain;
+  const dealsFrom = store ? (store.get("dealsFrom") as string | undefined) : found!.dealsFrom;
+  const everydayFrom = store ? (store.get("everydayFrom") as string | undefined) : found!.everydayFrom;
+
   const seenAt = r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : new Date().toISOString().slice(0, 10);
-  const { book, ads } = await loadComparePrices(db, storeId, store.get("dealsFrom") as string | undefined, store.get("everydayFrom") as string | undefined, seenAt);
+  const { book, ads } = await loadComparePrices(db, storeId, dealsFrom, everydayFrom, seenAt);
   const items: ScannedItem[] = [];
   for (const it of r.items) {
     if (!(it.linePrice > 0)) continue;
@@ -129,8 +152,10 @@ export async function scanReceipt(
 
   // Merge into the store's receipt book: one entry per product name, newest price wins.
   const ref = db.doc(`receiptPrices/${storeId}`);
+  const newStore = found?.newStore ?? null;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
+    if (newStore) tx.set(found!.ref, shopperStoreDoc(found!.chain, newStore, uid, "shopper-receipt", Timestamp.now()));
     const existing = (snap.get("items") as PriceBookItem[] | undefined) ?? [];
     const key = (p: PriceBookItem) => `${words(p.name).join(" ")}|${p.size ?? ""}`;
     const merged = new Map(existing.map((p) => [key(p), p]));
@@ -141,7 +166,7 @@ export async function scanReceipt(
     }
     tx.set(ref, {
       storeId,
-      chain: store.get("chain") ?? null,
+      chain,
       items: fitToDoc([...merged.values()]),
       updatedAt: new Date().toISOString(),
     });
@@ -167,6 +192,8 @@ export async function scanReceipt(
 
   return {
     duplicate: !dupe.empty,
+    storeId,
+    newStore: newStore !== null,
     receiptId: saved.id,
     storeName: r.storeName,
     date: seenAt,
