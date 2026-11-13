@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// This week's deals at one store, with the "Headed to" button. Opens from the store list
+/// This week's deals at one store, with the "Build a meal plan" button. Opens from the store list
 /// (StoresHomeView), which owns the navigation stack.
 struct HomeView: View {
     @Environment(Preferences.self) private var prefs
@@ -13,7 +13,7 @@ struct HomeView: View {
     @State private var deals: [Deal] = []
     @State private var loading = false
     @State private var error: String?
-    @State private var showingHeadedTo = false
+    @State private var showingPlanTrip = false
     @State private var showingPlans = false
     @State private var showingReceipt = false
     @State private var showingStockUpTrip = false
@@ -80,19 +80,17 @@ struct HomeView: View {
         }
         .safeAreaInset(edge: .bottom) {
             Button {
-                showingHeadedTo = true
+                showingPlanTrip = true
             } label: {
-                Label("Headed to \(currentStore?.chain.capitalized ?? "the store")", systemImage: "cart.fill")
+                Label("Build a meal plan", systemImage: "cart.fill")
             }
             .buttonStyle(BigButtonStyle())
             .disabled(storeId == nil)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
         }
-        .sheet(isPresented: $showingHeadedTo) {
-            if let store = currentStore {
-                HeadedToView(store: store, otherStores: myStores.filter { $0.id != store.id && $0.chain != store.chain })
-            }
+        .sheet(isPresented: $showingPlanTrip) {
+            PlanTripView(stores: stores, startWith: storeId)
         }
         .sheet(item: $selectedDeal) { deal in
             DealDetailView(deal: deal, storeName: currentStore?.name)
@@ -227,7 +225,7 @@ struct HomeView: View {
                     .font(Theme.body(.headline, weight: .bold))
                     .foregroundStyle(.white)
                 // Ad deals like "Buy 2, get 1 free" have no percent off, so skip "Up to 0% off".
-                Text((best > 0 ? "Up to \(best)% off. " : "") + "Tap \"Headed to\" and we'll plan supper around them.")
+                Text((best > 0 ? "Up to \(best)% off. " : "") + "Tap \"Build a meal plan\" and we'll plan supper around them.")
                     .font(Theme.body(.caption))
                     .foregroundStyle(.white.opacity(0.85))
             }

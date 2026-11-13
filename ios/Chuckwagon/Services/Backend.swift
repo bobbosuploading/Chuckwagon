@@ -76,10 +76,12 @@ enum Backend {
         return try doc.data(as: ClubList.self)
     }
 
-    /// "Headed to [store]": asks the backend for meals and a grocery list.
+    /// "Build a meal plan": asks the backend for meals and a grocery list from one to three stores
+    /// (`storeId` first, then `alsoStoreIds`).
     /// `onProgress` gets live updates while the plan is made (meals as they're written, then
     /// each step), on the main thread.
     static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,
+                          includeMeals: [MealPlan.Meal] = [],
                           onProgress: @escaping @MainActor @Sendable (PlanProgress) -> Void = { _ in }) async throws -> MealPlan {
         // Watch planProgress/{id}; the backend writes it as the plan takes shape and deletes it when done.
         let progressId = UUID().uuidString
@@ -107,6 +109,16 @@ enum Backend {
         }
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
+        }
+        // Saved meals to build around: their recipes, so the planner can keep them as they are.
+        if !includeMeals.isEmpty {
+            payload["includeMeals"] = includeMeals.map { meal in
+                [
+                    "name": meal.name,
+                    "ingredients": meal.ingredients.map { ["item": $0.item, "amount": $0.amount] },
+                    "steps": meal.steps,
+                ] as [String: Any]
+            }
         }
         let callable = Functions.functions().httpsCallable("planMealsForStore")
         // A Chef's pick plan can take several minutes; the function itself allows 540 s.

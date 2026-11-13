@@ -138,7 +138,7 @@ export const redeemTesterCode = onCall(async (request) => {
 });
 
 /**
- * "Headed to [store]". Called from the iOS app (and later Bloom Circle) by signed-in users.
+ * "Build a meal plan" (one to three stores). Called from the iOS app (and later Bloom Circle) by signed-in users.
  * Saves the plan to plans/{id} and returns it.
  */
 export const planMealsForStore = onCall(

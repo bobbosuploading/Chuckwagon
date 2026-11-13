@@ -8,9 +8,16 @@ it goes up, add a new "Build N" section at the top of this list.
 ========================================
 Build 6 (0.1.0)
 ========================================
+- "Headed to" is now "Build a meal plan". There's a big "Build a meal plan" button at the bottom of the store list and on every store's deals screen.
+- At the top of the plan screen, under "Shop at", turn on the stores you want to shop at, up to 3, right next to meals, people, budget and the rest. From a store's deals screen, that store starts out picked. From the store list, the stores you picked last time start out picked.
+- With more than one store picked, each item still comes from the store where it's cheapest, and your list is split by store. Try a plan with two stores, then one with three.
+- The "Shop at" list shows your starred stores. If you haven't starred any, it shows every store near you.
+- Build a plan around meals you already like: on the plan screen, under "Meals to include", tap "Pick saved meals" and check meals from your past plans or ones people shared with you. We keep your recipe, buy its ingredients on sale where we can, and plan the rest of the meals around it. Try picking one or two favorites with a budget turned on.
 - Scan a receipt or a weekly ad from any store near you. The "Store" list on the scan screen now shows every nearby store, not just your starred ones.
 - Shopped somewhere that isn't in the list, like Brookshire Brothers? Pick "Another store" and scan the receipt. We read the store's name from the receipt (or type it in) and add the store near you with its prices. Weekly ads work the same way.
 - Lowe's Market's weekly ad now loads on its own for people near a Lowe's Market (East Bernard, Needville, Palacios and more).
+[Plan screen is PlanTripView (was HeadedToView). The backend already takes up to 3 stores.]
+[Saved meals need a Firebase deploy of functions (planMealsForStore reads includeMeals). Until then the plan ignores them.]
 [Needs a Firebase deploy of functions (scanReceiptPhoto, scanAdPhoto) before this build reaches testers, or "Another store" receipts fail.]
 
 ========================================

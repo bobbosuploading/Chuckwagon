@@ -14,25 +14,17 @@ struct StoresHomeView: View {
     @State private var dealCounts: [String: Int] = [:]
     @State private var showingSettings = false
     @State private var showingPlans = false
+    @State private var showingPlanTrip = false
     /// A deal shared from another app, waiting to be finished (ShareInbox).
     @State private var inboxShare: HomeView.InboxShare?
 
     /// Nearby stores, closest first (stores without a map position go last, by name).
-    private var nearby: [Store] {
-        prefs.nearby(stores).sorted { a, b in
-            switch (distance(a), distance(b)) {
-            case let (x?, y?): return x < y
-            case (.some, nil): return true
-            case (nil, .some): return false
-            case (nil, nil): return a.name < b.name
-            }
-        }
-    }
+    private var nearby: [Store] { prefs.nearbyClosestFirst(stores) }
 
     private var starred: [Store] { nearby.filter { prefs.favoriteStoreIds.contains($0.id ?? "") } }
     private var others: [Store] { nearby.filter { !prefs.favoriteStoreIds.contains($0.id ?? "") } }
 
-    /// The stores the shopper uses for "Also stop at" and sharing: starred ones, or all nearby.
+    /// The stores the shopper uses for sharing: starred ones, or all nearby.
     private var myStores: [Store] { starred.isEmpty ? nearby : starred }
 
     private func dealCount(_ store: Store) -> Int? {
@@ -72,10 +64,23 @@ struct StoresHomeView: View {
                 }
             }
             .refreshable { await loadStores() }
+            .safeAreaInset(edge: .bottom) {
+                if !prefs.zip.isEmpty, !nearby.isEmpty {
+                    Button {
+                        showingPlanTrip = true
+                    } label: {
+                        Label("Build a meal plan", systemImage: "cart.fill")
+                    }
+                    .buttonStyle(BigButtonStyle())
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                }
+            }
             .navigationDestination(for: String.self) { id in
                 HomeView(storeId: id)
             }
             .sheet(isPresented: $showingPlans, onDismiss: { checkInbox() }) { MyPlansView() }
+            .sheet(isPresented: $showingPlanTrip, onDismiss: { checkInbox() }) { PlanTripView(stores: stores) }
             .sheet(isPresented: $showingSettings, onDismiss: { Task { await loadStores() } }) {
                 NavigationStack {
                     PreferencesForm(showsStores: true)
@@ -183,7 +188,7 @@ struct StoresHomeView: View {
                 Text(starred.isEmpty ? "Pick a store" : "Other stores nearby")
             } footer: {
                 Text(starred.isEmpty
-                     ? "Tap a store to see this week's deals and plan supper. Tap the star on the stores you shop at to keep them at the top."
+                     ? "Tap a store to see this week's deals, or tap \"Build a meal plan\" to plan supper from one or more stores. Tap the star on the stores you shop at to keep them at the top."
                      : "Tap a store to see this week's deals. Some stores show prices from a nearby store of the same chain; it says so under the store.")
             }
         }
@@ -313,7 +318,7 @@ struct StoresHomeView: View {
     /// Opens a deal shared from another app, once the stores are loaded. Only while this list is
     /// showing with nothing on top of it; the deals screen checks the inbox itself.
     private func checkInbox() {
-        guard inboxShare == nil, path.isEmpty, !showingSettings, !showingPlans, !myStores.isEmpty, let next = ShareInbox.next() else { return }
+        guard inboxShare == nil, path.isEmpty, !showingSettings, !showingPlans, !showingPlanTrip, !myStores.isEmpty, let next = ShareInbox.next() else { return }
         inboxShare = HomeView.InboxShare(item: next.item, image: next.image)
     }
 }
