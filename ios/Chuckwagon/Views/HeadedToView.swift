@@ -28,7 +28,9 @@ struct HeadedToView: View {
                         Text("Rustling up supper…")
                             .font(Theme.title(24))
                             .foregroundStyle(Theme.ink)
-                        Text("Matching this week's deals to meals your family will like.")
+                        Text(premium
+                             ? "Matching this week's deals to meals your family will like. Chef's pick plans take a few minutes."
+                             : "Matching this week's deals to meals your family will like.")
                             .font(Theme.body(.subheadline))
                             .foregroundStyle(Theme.ink.opacity(0.6))
                             .multilineTextAlignment(.center)
@@ -141,7 +143,7 @@ struct HeadedToView: View {
         do {
             plan = try await Backend.planMeals(storeId: storeId, alsoStoreIds: Array(alsoAt), prefs: prefs, haveAtHome: haveAtHome, premium: premium)
         } catch {
-            self.error = error.localizedDescription
+            self.error = Backend.friendlyMessage(for: error, planning: true)
         }
     }
 }
