@@ -6,6 +6,15 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 6 (0.1.0)
+========================================
+- "Headed to" is now "Build a meal plan". There's a big "Build a meal plan" button at the bottom of the store list and on every store's deals screen.
+- At the top of the plan screen, under "Shop at", turn on the stores you want to shop at, up to 3, right next to meals, people, budget and the rest. From a store's deals screen, that store starts out picked. From the store list, the stores you picked last time start out picked.
+- With more than one store picked, each item still comes from the store where it's cheapest, and your list is split by store. Try a plan with two stores, then one with three.
+- The "Shop at" list shows your starred stores. If you haven't starred any, it shows every store near you.
+[Plan screen is PlanTripView (was HeadedToView). App only; no Firebase deploy needed. The backend already takes up to 3 stores.]
+
+========================================
 Build 5 (0.1.0)
 ========================================
 - Share a meal or a whole plan: on a plan, tap the share button at the top right to send the meals and grocery list, or open a meal and tap share to send just that recipe. Send it by Messages, email or anything else. When the other person taps the link, it opens right in their Chuckwagon app. If they don't have the app, they see the recipe on a web page with a link to join the beta.

@@ -76,7 +76,8 @@ enum Backend {
         return try doc.data(as: ClubList.self)
     }
 
-    /// "Headed to [store]": asks the backend for meals and a grocery list.
+    /// "Build a meal plan": asks the backend for meals and a grocery list from one to three stores
+    /// (`storeId` first, then `alsoStoreIds`).
     /// `onProgress` gets live updates while the plan is made (meals as they're written, then
     /// each step), on the main thread.
     static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,

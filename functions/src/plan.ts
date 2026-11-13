@@ -1,5 +1,5 @@
 /**
- * "Headed to [store]": turns one store's current deals into meals and a grocery list.
+ * "Build a meal plan": turns the chosen stores' current deals into meals and a grocery list.
  *
  * The model picks meals and quantities and cites deals by ID. All prices and savings
  * are filled in here from Firestore, so the math never depends on the model.
