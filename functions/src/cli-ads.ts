@@ -1,5 +1,5 @@
 /**
- * Loads the current ALDI and Dollar General weekly ads into Firestore (GitHub Actions).
+ * Loads the current ALDI, Dollar General and Lowe's Market weekly ads into Firestore (GitHub Actions).
  * HOME_ZIP (default 77437); AREA_ZIPS (optional, comma-separated) instead of the registered areas.
  * DRY_RUN=1 prints the deals without writing.
  * GOOGLE_APPLICATION_CREDENTIALS = path to a Firebase service account JSON file (not needed for a dry run).
@@ -31,7 +31,7 @@ async function main() {
   const text = out.join("\n");
   console.log(text);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, "```\n" + text + "\n```\n");
-  if (results.every((r) => r.summary.deals === 0)) throw new Error("No ALDI or Dollar General ad items found");
+  if (results.every((r) => r.summary.deals === 0)) throw new Error("No ALDI, Dollar General or Lowe's Market ad items found");
 }
 
 main().catch((err) => {

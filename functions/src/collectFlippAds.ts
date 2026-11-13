@@ -6,7 +6,7 @@ import { AD_MAX_REGIONS } from "./config";
 import { clearOwnDeals, markAreasReady, sharingFields } from "./regions";
 
 /**
- * Weekly ads for chains that have no public API (ALDI, Dollar General), read from Flipp
+ * Weekly ads for chains that have no public API (ALDI, Dollar General, Lowe's Market), read from Flipp
  * the same way as the H-E-B ad (see collectHeb.ts). Ads list sale prices and promo text;
  * everyday prices come from shoppers' receipts instead (see receipts.ts).
  * Before a paid launch this should move to a licensed data source.
@@ -26,6 +26,8 @@ export const AD_CHAINS: AdChain[] = [
   // ALDI was not on Flipp near 77437 (Nov 2026), so it loads nothing there for now.
   { key: "aldi", chain: "ALDI", merchant: /^aldi\b/i },
   { key: "dollargeneral", chain: "Dollar General", merchant: /dollar general/i },
+  // West Texas, the Panhandle and New Mexico (Nov 2026: none near 77437). "Lowe's" alone is the hardware store.
+  { key: "lowesmarket", chain: "Lowe's Market", merchant: /^lowe.?s market/i },
 ];
 
 interface FlippFlyer { id: number; merchant: string; name?: string; valid_from: string; valid_to: string }
