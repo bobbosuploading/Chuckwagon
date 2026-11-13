@@ -6,6 +6,13 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 5 (0.1.0)
+========================================
+- Chef's pick plans no longer stop with "DEADLINE EXCEEDED". They can take a few minutes, so the app now waits for them, and if it does lose track of one, it checks for the finished plan and opens it. Try a Chef's pick plan with a second store turned on.
+- When something does go wrong, you'll see what to try instead of an error code.
+[Needs a Firebase deploy of functions (planMealsForStore now gets 9 minutes).]
+
+========================================
 Build 4 (0.1.0)
 ========================================
 - The app now opens on a list of stores near you, closest first, with how far each one is and how many deals it has this week. Tap a store to see its deals and plan supper. Tap the star next to the stores you shop at to keep them at the top under "My stores". If a store has no deals yet, it names the closest store of that chain that does. To switch stores from the deals screen, tap the store's name, or go back to the list.
