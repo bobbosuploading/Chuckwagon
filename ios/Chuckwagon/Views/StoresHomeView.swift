@@ -15,6 +15,7 @@ struct StoresHomeView: View {
     @State private var showingSettings = false
     @State private var showingPlans = false
     @State private var showingPlanTrip = false
+    @State private var showingScan = false
     /// A deal shared from another app, waiting to be finished (ShareInbox).
     @State private var inboxShare: HomeView.InboxShare?
 
@@ -66,12 +67,22 @@ struct StoresHomeView: View {
             .refreshable { await loadStores() }
             .safeAreaInset(edge: .bottom) {
                 if !prefs.zip.isEmpty, !nearby.isEmpty {
-                    Button {
-                        showingPlanTrip = true
-                    } label: {
-                        Label("Build a meal plan", systemImage: "cart.fill")
+                    HStack(spacing: 10) {
+                        Button {
+                            showingPlanTrip = true
+                        } label: {
+                            Label("Build a meal plan", systemImage: "cart.fill")
+                        }
+                        .buttonStyle(BigButtonStyle())
+                        Button {
+                            showingScan = true
+                        } label: {
+                            Label("Scan", systemImage: "doc.text.viewfinder")
+                        }
+                        .buttonStyle(BigButtonStyle(outlined: true))
+                        .fixedSize()
+                        .accessibilityLabel("Scan a receipt or ad")
                     }
-                    .buttonStyle(BigButtonStyle())
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
                 }
@@ -81,6 +92,16 @@ struct StoresHomeView: View {
             }
             .sheet(isPresented: $showingPlans, onDismiss: { checkInbox() }) { MyPlansView() }
             .sheet(isPresented: $showingPlanTrip, onDismiss: { checkInbox() }) { PlanTripView(stores: stores) }
+            .sheet(isPresented: $showingScan, onDismiss: { Task { await loadStores() }; checkInbox() }) {
+                // Starts on the closest starred store (or closest store); any nearby store can be picked.
+                ReceiptScanView(store: starred.first ?? nearby.first, myStores: nearby) { added in
+                    // A store added from a photo: star it so it shows under "My stores", then open it.
+                    if !prefs.favoriteStoreIds.isEmpty, !prefs.favoriteStoreIds.contains(added) {
+                        prefs.favoriteStoreIds.append(added)
+                    }
+                    path = [added]
+                }
+            }
             .sheet(isPresented: $showingSettings, onDismiss: { Task { await loadStores() } }) {
                 NavigationStack {
                     PreferencesForm(showsStores: true)
@@ -188,7 +209,7 @@ struct StoresHomeView: View {
                 Text(starred.isEmpty ? "Pick a store" : "Other stores nearby")
             } footer: {
                 Text(starred.isEmpty
-                     ? "Tap a store to see this week's deals, or tap \"Build a meal plan\" to plan supper from one or more stores. Tap the star on the stores you shop at to keep them at the top."
+                     ? "Tap a store to see this week's deals, or tap \"Build a meal plan\" to plan supper from one or more stores. Tap \"Scan\" to add a receipt or weekly ad. Tap the star on the stores you shop at to keep them at the top."
                      : "Tap a store to see this week's deals. Some stores show prices from a nearby store of the same chain; it says so under the store.")
             }
         }
