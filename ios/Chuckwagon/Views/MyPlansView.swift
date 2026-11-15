@@ -17,7 +17,7 @@ struct MyPlansView: View {
                     ContentUnavailableView("Couldn't load your plans", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else if plans.isEmpty && shared.isEmpty {
                     ContentUnavailableView("No plans yet", systemImage: "list.bullet.clipboard",
-                                           description: Text("Tap \"Headed to\" to make your first one. It will be saved here."))
+                                           description: Text("Tap \"Build a meal plan\" to make your first one. It will be saved here."))
                 } else {
                     List {
                         if !shared.isEmpty {

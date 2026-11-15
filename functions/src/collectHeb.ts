@@ -21,6 +21,8 @@ interface FlippItem {
   brand: string | null;
   description: string | null;
   price_text: string | null;
+  pre_price_text?: string | null;
+  post_price_text?: string | null;
   sale_story: string | null;
   disclaimer_text: string | null;
   current_price: string | null;
@@ -55,9 +57,30 @@ function categorize(text: string): Category {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function toHebDeal(it: FlippItem, storeId: string, now: Timestamp): Deal {
+/**
+ * The ad's sale price in dollars, or null when there's none or it can't be trusted.
+ * Some ads print cents ("69¢"); Flipp can pass the 69 through as dollars, so a ¢ anywhere
+ * in the price text means cents. As a safety net, a whole-dollar food price of $20 or more
+ * is almost always a misread cents price: it's dropped and the item stays an "on sale" deal
+ * with no price, so it can't add $69 to a meal plan.
+ */
+export function adPrice(
+  it: Pick<FlippItem, "current_price" | "price_text" | "pre_price_text" | "post_price_text" | "name" | "description">
+): number | null {
   const price = it.current_price ? Number(it.current_price) : NaN;
-  const salePrice = Number.isFinite(price) && price > 0 ? price : null;
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const text = [it.pre_price_text, it.price_text, it.post_price_text].filter(Boolean).join(" ");
+  if (/¢|\bcents?\b/i.test(text) && price >= 1) return round2(price / 100);
+  const isFood = categorize(`${it.name} ${it.description ?? ""}`) !== "household";
+  if (isFood && Number.isInteger(price) && price >= 20) {
+    console.warn(`Dropping suspicious ad price ${price} for "${it.name}" (price text: "${text}")`);
+    return null;
+  }
+  return price;
+}
+
+export function toHebDeal(it: FlippItem, storeId: string, now: Timestamp): Deal {
+  const salePrice = adPrice(it);
   const savings = it.dollars_off ?? null;
   const regularPrice = salePrice !== null && savings !== null ? round2(salePrice + savings) : null;
   const pctOff = it.percent_off ?? (regularPrice && savings ? Math.round((savings / regularPrice) * 100) : 0);

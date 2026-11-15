@@ -99,7 +99,8 @@ Rollout, in order:
    `com.bobby.chuckwagon` on Nov 12, 2026. Do the same for **Chuckwagon Dev** before turning enforcement on.
 2. Ship a TestFlight build with App Check. Until the next step, older builds keep working.
 3. When App Check > APIs shows mostly verified requests, turn enforcement on:
-   - Functions: set the GitHub repo variable `APP_CHECK_ENFORCE` to `true` and run the "Deploy to Firebase" workflow.
+   - Functions: on by default since Nov 15, 2026 (the "Deploy to Firebase" workflow enforces unless the repo
+     variable `APP_CHECK_ENFORCE` is `false`).
    - Firestore: App Check > APIs > Cloud Firestore > **Enforce**.
 
-To undo, set `APP_CHECK_ENFORCE` back to `false` and redeploy, and click Unenforce for Firestore.
+To undo, set the GitHub repo variable `APP_CHECK_ENFORCE` to `false` and redeploy, and click Unenforce for Firestore.

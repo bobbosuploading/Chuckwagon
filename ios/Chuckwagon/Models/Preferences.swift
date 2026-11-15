@@ -15,6 +15,8 @@ final class Preferences {
     /// Weekly grocery budget in whole dollars; 0 means no budget.
     var weeklyBudget: Int { didSet { defaults.set(weeklyBudget, forKey: "weeklyBudget") } }
     var favoriteStoreIds: [String] { didSet { defaults.set(favoriteStoreIds, forKey: "favoriteStoreIds") } }
+    /// The stores picked for the last meal plan, so the next one starts with the same ones.
+    var planStoreIds: [String] { didSet { defaults.set(planStoreIds, forKey: "planStoreIds") } }
     /// Shopper's ZIP and its approximate center (0 = unknown). Only the ZIP leaves the phone.
     var zip: String { didSet { defaults.set(zip, forKey: "zip") } }
     var latitude: Double { didSet { defaults.set(latitude, forKey: "latitude") } }
@@ -39,6 +41,22 @@ final class Preferences {
             if store.areaZips?.contains(zip) == true { return true }
             if let storeZip = store.zip ?? store.address?.zipCode { return storeZip == zip }
             return true // older store records without a location
+        }
+    }
+
+    /// Nearby stores, closest first (stores without a map position go last, by name).
+    func nearbyClosestFirst(_ stores: [Store]) -> [Store] {
+        let lat = latitude, lng = longitude
+        let miles: (Store) -> Double? = { store in
+            lat == 0 ? nil : store.distanceMiles(fromLat: lat, lng: lng)
+        }
+        return nearby(stores).sorted { a, b in
+            switch (miles(a), miles(b)) {
+            case let (x?, y?): return x < y
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return a.name < b.name
+            }
         }
     }
 
@@ -67,6 +85,7 @@ final class Preferences {
         maxCookMinutes = defaults.object(forKey: "maxCookMinutes") as? Int ?? 45
         weeklyBudget = defaults.object(forKey: "weeklyBudget") as? Int ?? 0
         favoriteStoreIds = defaults.stringArray(forKey: "favoriteStoreIds") ?? []
+        planStoreIds = defaults.stringArray(forKey: "planStoreIds") ?? []
         zip = defaults.string(forKey: "zip") ?? ""
         latitude = defaults.double(forKey: "latitude")
         longitude = defaults.double(forKey: "longitude")

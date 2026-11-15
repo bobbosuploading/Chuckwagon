@@ -10,9 +10,9 @@
  */
 import { appendFileSync } from "node:fs";
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { Firestore, getFirestore } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
-import { chooseMeals, MealPlan, planMeals, PlanOptions, PlanRequest } from "./plan";
+import { chooseMeals, IncludeMeal, MealPlan, planMeals, PlanOptions, PlanRequest } from "./plan";
 
 const VARIANTS: Record<string, Omit<PlanOptions, "model">> = {
   medium: {},
@@ -82,6 +82,22 @@ function toMarkdown(p: MealPlan): string {
   return out.join("\n");
 }
 
+/**
+ * INCLUDE_MEALS: meal names, separated by ";". Each is looked up in recently saved plans so the
+ * planner gets its recipe, the way the app sends a saved meal; a name not found goes by name only.
+ */
+async function savedMeals(db: Firestore, names?: string): Promise<IncludeMeal[] | undefined> {
+  const wanted = (names ?? "").split(";").map((n) => n.trim()).filter(Boolean);
+  if (wanted.length === 0) return undefined;
+  const recent = await db.collection("plans").orderBy("createdAt", "desc").limit(100).get();
+  const known = recent.docs.flatMap((d) => (d.get("meals") as IncludeMeal[] | undefined) ?? []);
+  return wanted.map((name) => {
+    const m = known.find((k) => k.name?.toLowerCase() === name.toLowerCase());
+    console.log(m ? `Including saved meal "${m.name}"` : `Including "${name}" by name only (no saved recipe found)`);
+    return m ? { name: m.name, ingredients: m.ingredients.map(({ item, amount }) => ({ item, amount })), steps: m.steps } : { name, ingredients: [], steps: [] };
+  });
+}
+
 async function main() {
   initializeApp();
   const db = getFirestore();
@@ -101,6 +117,7 @@ async function main() {
     dislikes: process.env.DISLIKES,
     budget: num(process.env.BUDGET),
     extraMeals: num(process.env.EXTRA),
+    includeMeals: await savedMeals(db, process.env.INCLUDE_MEALS),
   };
   const anthropic = new Anthropic();
   const model = process.env.MODEL || undefined;

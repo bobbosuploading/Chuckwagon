@@ -1,5 +1,5 @@
 /**
- * "Headed to [store]": turns one store's current deals into meals and a grocery list.
+ * "Build a meal plan": turns the chosen stores' current deals into meals and a grocery list.
  *
  * The model picks meals and quantities and cites deals by ID. All prices and savings
  * are filled in here from Firestore, so the math never depends on the model.
@@ -44,6 +44,51 @@ export interface PlanRequest {
   extraMeals?: number;
   /** Optional: the app's id for watching this plan's progress (planProgress/{progressId}). */
   progressId?: string;
+  /**
+   * Optional: saved meals the shopper wants in this plan (from an earlier plan or a shared
+   * meal). They become main meals, with their ingredients matched to the stores' sale items;
+   * the rest of the meals are planned around them. At most mealCount are used.
+   */
+  includeMeals?: IncludeMeal[];
+}
+
+export interface IncludeMeal {
+  name: string;
+  ingredients: { item: string; amount: string }[];
+  steps: string[];
+}
+
+/** Keeps only well-formed meals, trimmed to sane sizes (the app sends them, so check them). */
+export function cleanIncludeMeals(raw: unknown, max: number): IncludeMeal[] {
+  if (!Array.isArray(raw)) return [];
+  const text = (v: unknown, len: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, len) : "");
+  const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const meals: IncludeMeal[] = [];
+  for (const m of raw as Record<string, unknown>[]) {
+    if (meals.length >= max) break;
+    const name = text(m?.name, 80);
+    if (!name || meals.some((x) => x.name.toLowerCase() === name.toLowerCase())) continue;
+    const ingredients = list(m.ingredients)
+      .map((i) => ({ item: text((i as Record<string, unknown>)?.item, 80), amount: text((i as Record<string, unknown>)?.amount, 40) }))
+      .filter((i) => i.item)
+      .slice(0, 25);
+    const steps = list(m.steps)
+      .map((t) => text(t, 300))
+      .filter(Boolean)
+      .slice(0, 12);
+    meals.push({ name, ingredients, steps });
+  }
+  return meals;
+}
+
+function includeMealsText(meals: IncludeMeal[]): string {
+  return meals
+    .map((m) => {
+      const ings = m.ingredients.map((i) => `${i.amount ? `${i.amount} ` : ""}${i.item}`).join("; ");
+      const steps = m.steps.length ? `\n  steps: ${m.steps.map((t, i) => `${i + 1}. ${t}`).join(" ")}` : "";
+      return `- ${m.name}\n  ingredients: ${ings || "(none listed)"}${steps}`;
+    })
+    .join("\n");
 }
 
 /** At most this many extra meal ideas per plan, and this many meals in all. */
@@ -131,6 +176,7 @@ Rules:
 - Don't state totals, targets or price estimates in notes; the app shows the real totals from store prices.
 - If the sale items can't support the requested number of meals, return fewer and explain in notes.
 - If EXTRA MEAL IDEAS is more than 0, return that many extra meals AFTER the main ones (main meals first, best first). Make each extra clearly different from the main meals (another protein or style) so the shopper has a real choice, and build it from the same sale items where you can. The shopper picks which meals to cook, and the app keeps only the grocery lines for picked meals, so: put every meal's ingredients on the grocery list, give every meal a different name, and list in forMeals the exact name of every meal that uses the line. A BUDGET applies to the main meals; keep each extra about as cheap as a main meal so a swap still fits.
+- If MEALS TO INCLUDE are given, the shopper picked them from saved recipes: make each one a main meal, first, under exactly the same name, keeping the dish and its recipe (rescale it to the household). Where a SALE ITEM can stand in for one of its ingredients (the same food in another brand or size, or a similar cut), use and cite the sale item to save money; otherwise put the ingredient on the list as a non-sale item. Allergies, diet and HAVE AT HOME still apply: if a picked meal has an allergen, swap it out and say so in notes. Plan the remaining main meals around the sale items, favoring ones that share ingredients with the included meals.
 - The grocery list must be COMPLETE: every ingredient from every meal that isn't under HAVE AT HOME, combined into one line per product (usually 12 to 25 lines). Group it by aisle.`;
 
 function dealLine(d: Deal, id: string, storeName?: string): string {
@@ -484,6 +530,7 @@ export async function planMeals(
   const multi = storeIds.length > 1;
   const mealCount = req.mealCount ?? 4;
   const extraMeals = Math.max(0, Math.min(MAX_EXTRA_MEALS, MAX_TOTAL_MEALS - mealCount, Math.floor(req.extraMeals ?? 0)));
+  const includeMeals = cleanIncludeMeals(req.includeMeals, mealCount);
   const budget =
     req.budget && req.budget >= BUDGET_RANGE.min && req.budget <= BUDGET_RANGE.max ? round2(req.budget) : undefined;
 
@@ -556,7 +603,7 @@ ALLERGIES: ${req.allergies || "none"}
 DISLIKES: ${req.dislikes || "none"}
 HAVE AT HOME: ${req.haveAtHome || "salt, pepper, cooking oil, basic spices"}
 BUDGET: ${budget ? `$${budget} for the whole list (aim for about $${Math.floor(budget * BUDGET_AIM)} to leave room for price surprises)` : "none"}
-
+${includeMeals.length ? `\nMEALS TO INCLUDE (${includeMeals.length} of the ${mealCount} main meals):\n${includeMealsText(includeMeals)}\n` : ""}
 SALE ITEMS:
 ${lines}`;
 

@@ -7,6 +7,8 @@ import UIKit
 /// out of the everyday prices (functions/src/receiptSales.ts).
 /// A weekly ad photo adds that week's deals for a store whose ad we can't load
 /// automatically, and can add the store itself (functions/src/adScans.ts).
+/// Either kind can be for any nearby store, or for "Another store" that isn't in
+/// Chuckwagon yet: it's named from the photo (or what the shopper types) and added near them.
 struct ReceiptScanView: View {
     enum Mode: String, CaseIterable, Identifiable {
         case receipt = "Receipt"
@@ -15,14 +17,17 @@ struct ReceiptScanView: View {
     }
 
     let store: Store?
+    /// Every nearby store, for the "Store" picker.
     var myStores: [Store] = []
-    /// Called with a store's id when an ad scan added it.
+    /// Called with a store's id when a scan added it.
     var onStoreAdded: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @Environment(Preferences.self) private var prefs
     @State private var mode: Mode = .receipt
-    /// The store an ad is for; nil means "another store" (named from the ad).
-    @State private var adStoreId: String?
+    /// The store the photo is from; nil means "another store" (named from the photo or typed).
+    @State private var pickedStoreId: String?
+    /// The store's name, for "Another store". Optional: the name printed on the photo wins.
+    @State private var otherStoreName = ""
     @State private var pickerItem: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var scanning = false
@@ -34,11 +39,16 @@ struct ReceiptScanView: View {
         self.store = store
         self.myStores = myStores
         self.onStoreAdded = onStoreAdded
-        _adStoreId = State(initialValue: store?.id)
-        _mode = State(initialValue: store == nil ? .ad : .receipt)
+        _pickedStoreId = State(initialValue: store?.id)
     }
 
-    private var canScan: Bool { !scanning && (mode == .ad || store != nil) }
+    private var canScan: Bool { !scanning }
+    private var pickedStore: Store? { pickedStoreId == nil ? nil : pickerStores.first { $0.id == pickedStoreId } }
+    /// The picker's stores: nearby ones, plus the one on the home screen if it isn't among them.
+    private var pickerStores: [Store] {
+        guard let store, !myStores.contains(where: { $0.id == store.id }) else { return myStores }
+        return [store] + myStores
+    }
 
     var body: some View {
         NavigationStack {
@@ -49,12 +59,16 @@ struct ReceiptScanView: View {
                     }
                     .pickerStyle(.segmented)
                     .disabled(scanning)
-                    if mode == .ad {
-                        Picker("Ad for", selection: $adStoreId) {
-                            ForEach(myStores) { Text($0.name).tag($0.id) }
-                            Text("Another store").tag(String?.none)
-                        }
-                        .disabled(scanning)
+                    Picker("Store", selection: $pickedStoreId) {
+                        ForEach(pickerStores) { Text($0.name).tag($0.id) }
+                        Text("Another store").tag(String?.none)
+                    }
+                    .disabled(scanning)
+                    if pickedStoreId == nil {
+                        TextField("Store name, like Brookshire Brothers", text: $otherStoreName)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .disabled(scanning)
                     }
                     Text(intro)
                         .font(Theme.body(.subheadline))
@@ -73,6 +87,7 @@ struct ReceiptScanView: View {
                          : "One page per photo, flat and in good light. Include the dates the prices are good for. Coupons can't be scanned yet. We keep the deals, not the photo.")
                 }
                 .onChange(of: mode) { _, _ in error = nil }
+                .onChange(of: pickedStoreId) { _, _ in error = nil }
 
                 if scanning {
                     Section { HStack { ProgressView(); Text(mode == .receipt ? "Reading your receipt…" : "Reading the ad…").padding(.leading, 8) } }
@@ -130,13 +145,15 @@ struct ReceiptScanView: View {
     private var intro: String {
         switch mode {
         case .receipt:
-            guard let store else { return "Pick a store on the home screen first." }
-            return "Snap your \(store.chain) receipt and we'll learn its everyday prices. Your plans get more accurate totals, and so does everyone shopping \(store.chain)."
+            if let chosen = pickedStore {
+                return "Snap your \(chosen.chain) receipt and we'll learn its everyday prices. Your plans get more accurate totals, and so does everyone shopping \(chosen.chain)."
+            }
+            return "Shopped somewhere that isn't in the list? Snap the receipt and we'll add the store near \(prefs.zip.isEmpty ? "you" : prefs.zip) with its prices. We read the store's name from the receipt, or type it above."
         case .ad:
-            if let id = adStoreId, let chosen = myStores.first(where: { $0.id == id }) {
+            if let chosen = pickedStore {
                 return "Snap a page of \(chosen.chain)'s printed weekly ad and its deals go into your plans, and everyone else's near you."
             }
-            return "Have a printed ad from a store that isn't in Chuckwagon, like a local grocer? Snap a page and we'll add the store near \(prefs.zip.isEmpty ? "you" : prefs.zip) with its deals."
+            return "Have a printed ad from a store that isn't in the list, like a local grocer? Snap a page and we'll add the store near \(prefs.zip.isEmpty ? "you" : prefs.zip) with its deals. Type its name above if the page doesn't show it."
         }
     }
 
@@ -159,21 +176,25 @@ struct ReceiptScanView: View {
         result = nil
         adResult = nil
         defer { scanning = false }
+        if pickedStoreId == nil, prefs.zip.isEmpty {
+            error = "Set your ZIP code in Settings first, so we know where the store is."
+            return
+        }
         do {
             switch mode {
             case .receipt:
-                guard let storeId = store?.id else { return }
-                result = try await Backend.scanReceipt(storeId: storeId, image: image)
+                let scan = try await Backend.scanReceipt(storeId: pickedStoreId, storeName: otherStoreName, zip: prefs.zip,
+                                                         latitude: prefs.latitude, longitude: prefs.longitude, image: image)
+                result = scan
+                if scan.newStore == true, let id = scan.storeId { onStoreAdded(id) }
+                if pickedStoreId == nil, let name = scan.storeName, !name.isEmpty { otherStoreName = name }
             case .ad:
-                if adStoreId == nil, prefs.zip.isEmpty {
-                    error = "Set your ZIP code in Settings first, so we know where the store is."
-                    return
-                }
-                let scan = try await Backend.scanAd(storeId: adStoreId, zip: prefs.zip, latitude: prefs.latitude, longitude: prefs.longitude, image: image)
+                let scan = try await Backend.scanAd(storeId: pickedStoreId, storeName: otherStoreName, zip: prefs.zip,
+                                                    latitude: prefs.latitude, longitude: prefs.longitude, image: image)
                 adResult = scan
                 if scan.newStore { onStoreAdded(scan.storeId) }
                 // Later pages of the same ad go to the same store.
-                adStoreId = scan.storeId
+                if pickedStoreId == nil { otherStoreName = scan.storeName }
             }
         } catch {
             self.error = Backend.friendlyMessage(for: error)

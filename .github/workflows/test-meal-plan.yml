@@ -32,6 +32,9 @@ on:
       also_stores:
         description: "More store ids, comma-separated (optional)"
         default: ""
+      include_meals:
+        description: "Saved meals to build around, by name, separated by ; (optional)"
+        default: ""
       variants:
         description: "Compare thinking efforts, comma-separated: medium, low, high (blank = the app's setting only)"
         default: ""
@@ -71,3 +74,4 @@ jobs:
           STORE_ID: ${{ inputs.store }}
           STORE_IDS: ${{ inputs.also_stores }}
           VARIANTS: ${{ inputs.variants }}
+          INCLUDE_MEALS: ${{ inputs.include_meals }}

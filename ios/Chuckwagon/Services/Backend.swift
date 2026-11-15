@@ -76,10 +76,12 @@ enum Backend {
         return try doc.data(as: ClubList.self)
     }
 
-    /// "Headed to [store]": asks the backend for meals and a grocery list.
+    /// "Build a meal plan": asks the backend for meals and a grocery list from one to three stores
+    /// (`storeId` first, then `alsoStoreIds`).
     /// `onProgress` gets live updates while the plan is made (meals as they're written, then
     /// each step), on the main thread.
     static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,
+                          includeMeals: [MealPlan.Meal] = [],
                           onProgress: @escaping @MainActor @Sendable (PlanProgress) -> Void = { _ in }) async throws -> MealPlan {
         // Watch planProgress/{id}; the backend writes it as the plan takes shape and deletes it when done.
         let progressId = UUID().uuidString
@@ -107,6 +109,16 @@ enum Backend {
         }
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
+        }
+        // Saved meals to build around: their recipes, so the planner can keep them as they are.
+        if !includeMeals.isEmpty {
+            payload["includeMeals"] = includeMeals.map { meal in
+                [
+                    "name": meal.name,
+                    "ingredients": meal.ingredients.map { ["item": $0.item, "amount": $0.amount] },
+                    "steps": meal.steps,
+                ] as [String: Any]
+            }
         }
         let callable = Functions.functions().httpsCallable("planMealsForStore")
         // A Chef's pick plan can take several minutes; the function itself allows 540 s.
@@ -228,19 +240,25 @@ enum Backend {
             var receiptsToNextChefPick: Int?
         }
         var storeName: String?
+        /// The store the prices were saved under, and whether this scan added it.
+        var storeId: String?
+        var newStore: Bool?
         var items: [Item]
         var reward: Reward?
     }
 
     /// Sends a receipt photo to the backend, which saves the store's everyday prices.
-    static func scanReceipt(storeId: String, image: UIImage) async throws -> ReceiptScan {
+    /// With no storeId, the store is one that isn't in the shopper's list: it's named from the
+    /// receipt (or storeName, when typed) and added near their ZIP.
+    static func scanReceipt(storeId: String?, storeName: String = "", zip: String = "", latitude: Double = 0, longitude: Double = 0, image: UIImage) async throws -> ReceiptScan {
         guard let jpeg = image.uploadJPEG() else {
             throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
         }
-        let result = try await callPhotoFunction("scanReceiptPhoto",
-            ["storeId": storeId, "imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"])
-        let data = try JSONSerialization.data(withJSONObject: result.data)
-        return try JSONDecoder().decode(ReceiptScan.self, from: data)
+        var data: [String: Any] = ["imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"]
+        addStore(to: &data, storeId: storeId, storeName: storeName, zip: zip, latitude: latitude, longitude: longitude)
+        let result = try await callPhotoFunction("scanReceiptPhoto", data)
+        let json = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(ReceiptScan.self, from: json)
     }
 
     /// What a weekly ad scan read. Prices are per item, or per lb when soldBy is "WEIGHT".
@@ -268,20 +286,27 @@ enum Backend {
 
     /// Sends one page of a printed weekly ad. Pass a store, or nil to add the store named on
     /// the ad near the shopper's ZIP.
-    static func scanAd(storeId: String?, zip: String, latitude: Double, longitude: Double, image: UIImage) async throws -> AdScan {
+    static func scanAd(storeId: String?, storeName: String = "", zip: String, latitude: Double, longitude: Double, image: UIImage) async throws -> AdScan {
         guard let jpeg = image.uploadJPEG() else {
             throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
         }
         var data: [String: Any] = ["imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"]
-        if let storeId {
-            data["storeId"] = storeId
-        } else {
-            data["zip"] = zip
-            if latitude != 0 { data["lat"] = latitude; data["lng"] = longitude }
-        }
+        addStore(to: &data, storeId: storeId, storeName: storeName, zip: zip, latitude: latitude, longitude: longitude)
         let result = try await callPhotoFunction("scanAdPhoto", data)
         let json = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(AdScan.self, from: json)
+    }
+
+    /// A photo scan's store: one from the list, or a store that isn't in Chuckwagon yet (by name, near the ZIP).
+    private static func addStore(to data: inout [String: Any], storeId: String?, storeName: String, zip: String, latitude: Double, longitude: Double) {
+        if let storeId {
+            data["storeId"] = storeId
+            return
+        }
+        data["zip"] = zip
+        let name = storeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { data["storeName"] = name }
+        if latitude != 0 { data["lat"] = latitude; data["lng"] = longitude }
     }
 
     /// Deals shoppers shared from social media for a store: its own, plus ones for every store

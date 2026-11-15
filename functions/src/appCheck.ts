@@ -3,9 +3,8 @@ import { CallableRequest, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 
 /**
- * App Check rollout switch. Set the GitHub repo variable APP_CHECK_ENFORCE to "true"
- * and run the deploy workflow once the App Check build is on everyone's phone.
- * While it is false, calls without an App Check token still work but are logged,
+ * App Check switch. The deploy workflow sets this to true unless the GitHub repo variable
+ * APP_CHECK_ENFORCE is "false" (the rollback). While it is false, calls without an App Check token still work but are logged,
  * so old TestFlight builds keep working during the switch-over.
  */
 const APP_CHECK_ENFORCE = defineBoolean("APP_CHECK_ENFORCE", { default: false });
