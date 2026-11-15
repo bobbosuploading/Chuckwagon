@@ -6,6 +6,15 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 7 (0.1.0)
+========================================
+- Tell us what you're in the mood for. On the plan screen, under "In the mood for", tap one or more quick picks like Mexican, Seafood, Italian or International, or type your own (for example "something spicy"). Your meals follow it and are still built from what's on sale.
+- Want a theme night? Turn on "Pick a theme for each night" and choose one for each meal, like Mexican for meal 1 and Seafood for meal 3. Leave a night on "Any" to let us choose.
+- Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
+[Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
+[If build 6 was never uploaded, fold this section into Build 6 and set the build number back to 6.]
+
+========================================
 Build 6 (0.1.0)
 ========================================
 - "Headed to" is now "Build a meal plan". There's a big "Build a meal plan" button at the bottom of the store list and on every store's deals screen.

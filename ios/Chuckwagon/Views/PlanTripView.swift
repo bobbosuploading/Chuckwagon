@@ -19,6 +19,8 @@ struct PlanTripView: View {
     @State private var haveAtHome = ""
     /// Saved meals to build the plan around.
     @State private var included: [MealPlan.Meal] = []
+    /// What the shopper feels like eating this trip (not saved for next time).
+    @State private var mood = MealMood()
     @State private var premium = false
     @State private var planning = false
     @State private var plan: MealPlan?
@@ -117,6 +119,7 @@ struct PlanTripView: View {
                      ? "We'll build the meals and the whole list to fit, sale and everyday items together."
                      : "Turn this on and we'll plan around what you have to spend this trip.")
             }
+            MealMoodSection(mood: $mood, mealCount: prefs.mealCount, includedNames: included.map(\.name))
             includedSection
             Section {
                 TextField("e.g. rice, eggs, onions", text: $haveAtHome, axis: .vertical)
@@ -245,7 +248,9 @@ struct PlanTripView: View {
         defer { planning = false }
         do {
             plan = try await Backend.planMeals(storeId: main, alsoStoreIds: Array(picked.dropFirst()), prefs: prefs, haveAtHome: haveAtHome,
-                                              premium: premium, includeMeals: included, onProgress: { progress = $0 })
+                                              premium: premium, includeMeals: included,
+                                              theme: mood.theme, nightThemes: mood.nightThemes(mealCount: prefs.mealCount),
+                                              onProgress: { progress = $0 })
         } catch {
             self.error = Backend.friendlyMessage(for: error, planning: true)
         }
