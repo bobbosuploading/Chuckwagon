@@ -37,7 +37,7 @@ jobs:
             echo "KROGER_CLIENT_SECRET=$KROGER_CLIENT_SECRET"
             echo "INSTACART_API_KEY=$INSTACART_API_KEY"
             echo "INSTACART_API_URL=$INSTACART_API_URL"
-            echo "APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE:-false}"
+            echo "APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE:-true}"
             if [ -n "$APPLE_TEAM_ID" ]; then echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"; fi
           } > .env
         env:
@@ -45,7 +45,7 @@ jobs:
           KROGER_CLIENT_SECRET: ${{ secrets.KROGER_CLIENT_SECRET }}
           INSTACART_API_KEY: ${{ secrets.INSTACART_API_KEY }}
           INSTACART_API_URL: ${{ vars.INSTACART_API_URL }}
-          # Repo variable: "true" makes the functions refuse calls from builds without App Check.
+          # Repo variable: App Check is enforced unless this is set to "false" (the rollback switch).
           APP_CHECK_ENFORCE: ${{ vars.APP_CHECK_ENFORCE }}
           # Repo variable: the Apple Team ID, so shared meal links open the app (universal links).
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
