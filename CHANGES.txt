@@ -9,7 +9,7 @@ it goes up, add a new "Build N" section at the top of this list.
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
-[Scan button is on StoresHomeView. If build 6 hasn't been uploaded yet, move this line into Build 6 and set CURRENT_PROJECT_VERSION back to 6.]
+[Scan button is on StoresHomeView.]
 
 ========================================
 Build 6 (0.1.0)
