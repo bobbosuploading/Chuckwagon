@@ -7,6 +7,9 @@ import UIKit
 /// out of the everyday prices (functions/src/receiptSales.ts).
 /// A weekly ad photo adds that week's deals for a store whose ad we can't load
 /// automatically, and can add the store itself (functions/src/adScans.ts).
+/// Several ad pages can be picked at once and are treated as one ad: store websites often
+/// print the sale dates on only one page, so pages without dates use the dates from the
+/// others (or a guess the shopper can change under "Sale dates").
 /// Either kind can be for any nearby store, or for "Another store" that isn't in
 /// Chuckwagon yet: it's named from the photo (or what the shopper types) and added near them.
 struct ReceiptScanView: View {
@@ -28,12 +31,33 @@ struct ReceiptScanView: View {
     @State private var pickedStoreId: String?
     /// The store's name, for "Another store". Optional: the name printed on the photo wins.
     @State private var otherStoreName = ""
-    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showingCamera = false
     @State private var scanning = false
+    /// "Reading page 2 of 5…" while several ad pages are being read.
+    @State private var pageProgress: (done: Int, total: Int)?
     @State private var result: Backend.ReceiptScan?
-    @State private var adResult: Backend.AdScan?
+    /// Ad pages scanned on this screen for the picked store, in order. They're one ad.
+    @State private var adPages: [Backend.AdScan] = []
+    /// The dates for those pages, and where they came from.
+    @State private var adDates: AdDates?
+    @State private var editingDates = false
+    @State private var editFrom = Date()
+    @State private var editTo = Date()
+    @State private var savingDates = false
     @State private var error: String?
+
+    /// The sale dates for the ad pages on this screen.
+    struct AdDates: Equatable {
+        var validFrom: String?
+        var validTo: String
+        /// "printed", "recent-scan", "usual-week" or "shopper".
+        var source: String
+        var guessed: Bool { source == "recent-scan" || source == "usual-week" || source == "other-pages" }
+    }
+
+    /// Most ad pages a shopper can pick at once (the daily limit is 10 pages).
+    private static let maxAdPages = 10
 
     init(store: Store?, myStores: [Store] = [], onStoreAdded: @escaping (String) -> Void = { _ in }) {
         self.store = store
@@ -77,25 +101,31 @@ struct ReceiptScanView: View {
                         Button { showingCamera = true } label: { Label("Take a photo", systemImage: "camera.fill") }
                             .disabled(!canScan)
                     }
-                    PhotosPicker(selection: $pickerItem, matching: .images) {
-                        Label("Choose from Photos", systemImage: "photo.on.rectangle")
+                    PhotosPicker(selection: $pickerItems,
+                                 maxSelectionCount: mode == .ad ? Self.maxAdPages : 1,
+                                 selectionBehavior: .ordered,
+                                 matching: .images) {
+                        Label(mode == .ad ? "Choose pages from Photos" : "Choose from Photos", systemImage: "photo.on.rectangle")
                     }
                     .disabled(!canScan)
                 } footer: {
                     Text(mode == .receipt
                          ? "Lay the receipt flat in good light. We keep the prices, not the photo."
-                         : "One page per photo, flat and in good light. Include the dates the prices are good for. Coupons can't be scanned yet. We keep the deals, not the photo.")
+                         : "One page per photo, flat and in good light. Pick up to \(Self.maxAdPages) pages at once, and they count as one ad: if only one page shows the dates the prices are good for, the rest use them. Coupons can't be scanned yet. We keep the deals, not the photo.")
                 }
-                .onChange(of: mode) { _, _ in error = nil }
-                .onChange(of: pickedStoreId) { _, _ in error = nil }
+                .onChange(of: mode) { _, _ in resetScans() }
+                .onChange(of: pickedStoreId) { _, _ in resetScans() }
 
                 if scanning {
-                    Section { HStack { ProgressView(); Text(mode == .receipt ? "Reading your receipt…" : "Reading the ad…").padding(.leading, 8) } }
+                    Section { HStack { ProgressView(); Text(progressText).padding(.leading, 8) } }
                 }
                 if let error {
                     Section { Text(error).foregroundStyle(Color.chuckRed) }
                 }
-                if let reward = result?.reward ?? adResult?.reward {
+                if mode == .ad, let adDates {
+                    Section { datesView(adDates) } header: { Text("Sale dates") }
+                }
+                if let reward = result?.reward ?? adPages.last?.reward {
                     Section { rewardView(reward) }
                 }
                 if let result {
@@ -111,13 +141,14 @@ struct ReceiptScanView: View {
                         }
                     }
                 }
-                if let adResult {
+                if let last = adPages.last {
+                    let deals = adPages.flatMap(\.deals)
                     Section {
-                        ForEach(adResult.deals, id: \.self) { adDealRow($0) }
+                        ForEach(Array(deals.enumerated()), id: \.offset) { adDealRow($0.element) }
                     } header: {
-                        Text("Added \(adResult.deals.count) deals at \(adResult.storeName)")
+                        Text("Added \(deals.count) deals at \(last.storeName)")
                     } footer: {
-                        Text(adFooter(adResult))
+                        Text(adFooter(last))
                     }
                 }
             }
@@ -126,17 +157,30 @@ struct ReceiptScanView: View {
             .toolbar { Button("Done") { dismiss() } }
             .creamBackground()
             .sheet(isPresented: $showingCamera) {
-                CameraPicker { image in Task { await scan(image) } }.ignoresSafeArea()
-            }
-            .onChange(of: pickerItem) { _, item in
-                guard let item else { return }
-                Task {
-                    if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
-                        await scan(image)
-                    } else {
-                        error = "Couldn't open that photo."
+                CameraPicker { image in
+                    Task {
+                        if mode == .ad { await scanAdPages([image]) } else { await scan(image) }
                     }
-                    pickerItem = nil
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: pickerItems) { _, items in
+                guard !items.isEmpty else { return }
+                Task {
+                    var images: [UIImage] = []
+                    for item in items {
+                        if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                            images.append(image)
+                        }
+                    }
+                    pickerItems = []
+                    if images.isEmpty {
+                        error = items.count == 1 ? "Couldn't open that photo." : "Couldn't open those photos."
+                    } else if mode == .ad {
+                        await scanAdPages(images, unreadable: items.count - images.count)
+                    } else {
+                        await scan(images[0])
+                    }
                 }
             }
         }
@@ -158,10 +202,183 @@ struct ReceiptScanView: View {
     }
 
     private func adFooter(_ scan: Backend.AdScan) -> String {
-        var parts = ["Good through \(Self.shortDate(scan.validTo)). These deals go away when the ad ends."]
-        if scan.newStore { parts.insert("We added \(scan.storeName) to your stores.", at: 0) }
+        var parts: [String] = []
+        if adPages.contains(where: \.newStore) { parts.append("We added \(scan.storeName) to your stores.") }
+        if adPages.count > 1 { parts.append("From \(adPages.count) pages.") }
+        parts.append("Good through \(Self.shortDate(adDates?.validTo ?? scan.validTo)). These deals go away when the ad ends.")
         parts.append("Scan the other pages too for more deals.")
         return parts.joined(separator: " ")
+    }
+
+    private var progressText: String {
+        if mode == .receipt { return "Reading your receipt…" }
+        if let pageProgress, pageProgress.total > 1 { return "Reading page \(pageProgress.done) of \(pageProgress.total)…" }
+        return "Reading the ad…"
+    }
+
+    private func resetScans() {
+        error = nil
+        result = nil
+        adPages = []
+        adDates = nil
+        editingDates = false
+    }
+
+    /// "Wed, Nov 11 – Tue, Nov 17", or "Through Tue, Nov 17".
+    private static func dateRange(_ dates: AdDates) -> String {
+        let to = longDate(dates.validTo)
+        guard let from = dates.validFrom else { return "Through \(to)" }
+        return "\(longDate(from)) – \(to)"
+    }
+
+    private func datesNote(_ dates: AdDates) -> String {
+        switch dates.source {
+        case "recent-scan":
+            return "These pages don't show their dates, so we used the dates from this store's ad that was scanned recently. If they're wrong, change them."
+        case "usual-week", "other-pages":
+            return "These pages don't show their dates, so we guessed this week's ad, Wednesday to Tuesday. If that's wrong, change them, or scan the page that shows the dates."
+        case "shopper":
+            return "You set these dates. They apply to every page you scanned here."
+        default:
+            return adPages.contains(where: { !$0.datesPrinted })
+                ? "Read from the ad. The pages without dates use these too."
+                : "Read from the ad."
+        }
+    }
+
+    @ViewBuilder
+    private func datesView(_ dates: AdDates) -> some View {
+        if editingDates {
+            DatePicker("Starts", selection: $editFrom, displayedComponents: .date)
+            DatePicker("Ends", selection: $editTo, in: editFrom..., displayedComponents: .date)
+            HStack {
+                Button("Cancel") { editingDates = false }
+                    .buttonStyle(.borderless)
+                Spacer()
+                if savingDates { ProgressView() }
+                Button("Save dates") { Task { await saveDates() } }
+                    .buttonStyle(.borderless)
+                    .bold()
+                    .disabled(savingDates)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(Self.dateRange(dates)).font(Theme.body(.headline, weight: .bold))
+                    if dates.guessed {
+                        Text("GUESSED")
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Theme.red, in: Capsule())
+                    }
+                }
+                Text(datesNote(dates)).font(.caption).foregroundStyle(.secondary)
+            }
+            Button(dates.guessed ? "Change dates" : "Dates wrong? Change them") {
+                editFrom = Self.day(dates.validFrom) ?? Calendar.current.date(byAdding: .day, value: -6, to: Self.day(dates.validTo) ?? Date()) ?? Date()
+                editTo = Self.day(dates.validTo) ?? Date()
+                editingDates = true
+            }
+            .disabled(scanning)
+        }
+    }
+
+    /// Reads ad pages one at a time, in order, as one ad. A page without dates uses the dates
+    /// already known for this ad; when a later page shows the dates, earlier guessed pages move to them.
+    private func scanAdPages(_ images: [UIImage], unreadable: Int = 0) async {
+        scanning = true
+        error = nil
+        result = nil
+        editingDates = false
+        defer { scanning = false; pageProgress = nil }
+        if pickedStoreId == nil, prefs.zip.isEmpty {
+            error = "Set your ZIP code in Settings first, so we know where the store is."
+            return
+        }
+        var problems: [String] = []
+        if unreadable > 0 { problems.append("\(unreadable) photo\(unreadable == 1 ? "" : "s") couldn't be opened.") }
+        for (i, image) in images.enumerated() {
+            pageProgress = (i + 1, images.count)
+            do {
+                let page = try await Backend.scanAd(storeId: pickedStoreId, storeName: otherStoreName, zip: prefs.zip,
+                                                    latitude: prefs.latitude, longitude: prefs.longitude,
+                                                    validFrom: adDates?.validFrom, validTo: adDates?.validTo, image: image)
+                adPages.append(page)
+                if page.newStore { onStoreAdded(page.storeId) }
+                // Later pages of the same ad go to the same store.
+                if pickedStoreId == nil { otherStoreName = page.storeName }
+                await useDates(from: page)
+            } catch {
+                let message = Backend.friendlyMessage(for: error)
+                problems.append(images.count > 1 ? "Page \(i + 1): \(message)" : message)
+                // Out of scans for today: the rest would fail the same way.
+                if Backend.isLimitReached(error) { break }
+            }
+        }
+        if !problems.isEmpty { self.error = problems.joined(separator: "\n") }
+    }
+
+    /// Keeps one set of dates for the ad. Printed dates beat guessed ones: pages that were
+    /// guessed earlier move to the printed dates.
+    private func useDates(from page: Backend.AdScan) async {
+        let source = page.datesSource ?? "printed"
+        guard let current = adDates else {
+            adDates = AdDates(validFrom: page.validFrom, validTo: page.validTo, source: source)
+            return
+        }
+        guard page.datesPrinted, current.guessed else { return }
+        let printed = AdDates(validFrom: page.validFrom, validTo: page.validTo, source: "printed")
+        do {
+            try await moveGuessedPages(to: printed)
+            adDates = printed
+        } catch {
+            self.error = "The other pages are still set to \(Self.dateRange(current)). \(Backend.friendlyMessage(for: error))"
+        }
+    }
+
+    /// Moves every page scanned here that doesn't already end on `dates.validTo`.
+    private func moveGuessedPages(to dates: AdDates, includePrinted: Bool = false) async throws {
+        var moved = Set<String>()
+        for page in adPages where page.validTo != dates.validTo && (includePrinted || !page.datesPrinted) {
+            let key = "\(page.storeId)|\(page.validTo)"
+            if moved.insert(key).inserted {
+                try await Backend.fixAdDates(storeId: page.storeId, fromValidTo: page.validTo, validFrom: dates.validFrom, validTo: dates.validTo)
+            }
+        }
+        for i in adPages.indices where moved.contains("\(adPages[i].storeId)|\(adPages[i].validTo)") {
+            adPages[i].validTo = dates.validTo
+            adPages[i].validFrom = dates.validFrom
+        }
+    }
+
+    private func saveDates() async {
+        savingDates = true
+        defer { savingDates = false }
+        let picked = AdDates(validFrom: Self.iso(editFrom), validTo: Self.iso(editTo), source: "shopper")
+        do {
+            try await moveGuessedPages(to: picked, includePrinted: true)
+            adDates = picked
+            editingDates = false
+            error = nil
+        } catch {
+            self.error = Backend.friendlyMessage(for: error)
+        }
+    }
+
+    /// "2026-11-18" -> "Wed, Nov 18".
+    private static func longDate(_ iso: String) -> String {
+        guard let date = day(iso) else { return iso }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    private static func day(_ iso: String?) -> Date? {
+        guard let iso else { return nil }
+        return try? Date(iso, strategy: Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+    }
+
+    private static func iso(_ date: Date) -> String {
+        date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
     }
 
     /// "2026-11-18" -> "Nov 18".
@@ -174,7 +391,6 @@ struct ReceiptScanView: View {
         scanning = true
         error = nil
         result = nil
-        adResult = nil
         defer { scanning = false }
         if pickedStoreId == nil, prefs.zip.isEmpty {
             error = "Set your ZIP code in Settings first, so we know where the store is."
@@ -189,12 +405,7 @@ struct ReceiptScanView: View {
                 if scan.newStore == true, let id = scan.storeId { onStoreAdded(id) }
                 if pickedStoreId == nil, let name = scan.storeName, !name.isEmpty { otherStoreName = name }
             case .ad:
-                let scan = try await Backend.scanAd(storeId: pickedStoreId, storeName: otherStoreName, zip: prefs.zip,
-                                                    latitude: prefs.latitude, longitude: prefs.longitude, image: image)
-                adResult = scan
-                if scan.newStore { onStoreAdded(scan.storeId) }
-                // Later pages of the same ad go to the same store.
-                if pickedStoreId == nil { otherStoreName = scan.storeName }
+                await scanAdPages([image])
             }
         } catch {
             self.error = Backend.friendlyMessage(for: error)
