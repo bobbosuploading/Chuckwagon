@@ -39,15 +39,20 @@ extension View {
 
 /// The big red pill button used at the bottom of screens.
 struct BigButtonStyle: ButtonStyle {
+    /// Cream with a red outline, for a second button beside the main red one.
+    var outlined = false
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let red = enabled ? Theme.red : Theme.red.opacity(0.4)
+        return configuration.label
             .font(Theme.body(.headline, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(outlined ? red : .white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(enabled ? Theme.red : Theme.red.opacity(0.4), in: Capsule())
-            .shadow(color: Theme.red.opacity(0.35), radius: 10, y: 4)
+            .padding(.horizontal, outlined ? 18 : 0)
+            .background(outlined ? Theme.cream : red, in: Capsule())
+            .overlay(Capsule().stroke(outlined ? red : .clear, lineWidth: 2.5))
+            .shadow(color: Theme.red.opacity(outlined ? 0.15 : 0.35), radius: 10, y: 4)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }

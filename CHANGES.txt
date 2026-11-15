@@ -8,11 +8,13 @@ it goes up, add a new "Build N" section at the top of this list.
 ========================================
 Build 7 (0.1.0)
 ========================================
+- There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
 - Tell us what you're in the mood for. On the plan screen, under "In the mood for", tap one or more quick picks like Mexican, Seafood, Italian or International, or type your own (for example "something spicy"). Your meals follow it and are still built from what's on sale.
 - Want a theme night? Turn on "Pick a theme for each night" and choose one for each meal, like Mexican for meal 1 and Seafood for meal 3. Leave a night on "Any" to let us choose.
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [If build 6 was never uploaded, fold this section into Build 6 and set the build number back to 6.]
+[Scan button is on StoresHomeView.]
 
 ========================================
 Build 6 (0.1.0)
