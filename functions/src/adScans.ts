@@ -23,6 +23,7 @@ import { DocumentReference, Firestore, Timestamp } from "firebase-admin/firestor
 import { z } from "zod";
 import type { Deal } from "./collectKroger";
 import { withStockUp } from "./stockUp";
+import { deleteDealImages, saveDealImages } from "./dealImages";
 
 export const AD_SCAN_MODEL = "claude-haiku-5-5";
 
@@ -75,6 +76,12 @@ const AdSchema = z.object({
         .nullable()
         .describe("Deal wording when it isn't a plain price, e.g. 'Buy 1 get 1 free', '2 for $5', 'Limit 2'. Null otherwise."),
       category: z.enum(["meat", "seafood", "produce", "dairy", "bakery", "pantry", "frozen", "household"]),
+      picture: z
+        .object({ left: z.number(), top: z.number(), right: z.number(), bottom: z.number() })
+        .nullable()
+        .describe(
+          "Box around this item's product photo on the page, in thousandths of the page (0-1000): left and right of the width, top and bottom of the height. Just the product photo, not its price or text. Null if the deal has no photo."
+        ),
     })
   ),
 });
@@ -85,7 +92,9 @@ List every product deal on the page with its price. Skip banners, store hours, r
 without a price or deal. Read the dates the ad is good for (e.g. "Prices good Wed 11/12 - Tue 11/18");
 when the year isn't printed, use the year that puts the dates nearest today. Only fill dates the ad
 actually prints. If the image is a coupon or coupon sheet, set kind to "coupon". If it isn't a
-store ad at all, set kind to "other". Non-food items (paper towels, soap, pet food) go in household.`;
+store ad at all, set kind to "other". Non-food items (paper towels, soap, pet food) go in household.
+For each deal, also mark where its product photo is on the page (picture), measured as thousandths
+of the whole image from its top-left corner.`;
 }
 
 export interface ScannedDeal {
@@ -97,6 +106,8 @@ export interface ScannedDeal {
   regularPrice: number | null;
   promo: string | null;
   category: Deal["category"];
+  /** Small picture cut from the ad page, when there was one. */
+  imageUrl: string | null;
   /** How many shoppers' scans showed this same deal (1 = just this one). */
   confirmations: number;
 }
@@ -364,6 +375,11 @@ export async function scanAd(
   const dealId = (it: { name: string; size: string | null }) =>
     `${target.dealStoreId}_scan-${createHash("sha256").update(`${letters(it.name)}|${letters(it.size ?? "")}`).digest("hex").slice(0, 16)}`;
   const refs = fresh.map((it) => db.doc(`deals/${dealId(it)}`));
+  // Cut each item's picture out of the page (best effort; the photo itself isn't kept).
+  const pictures = await saveDealImages(
+    imageBase64,
+    fresh.map((it, i) => ({ dealId: refs[i].id, box: it.picture }))
+  );
 
   const deals: ScannedDeal[] = [];
   await db.runTransaction(async (tx) => {
@@ -389,7 +405,8 @@ export async function scanAd(
         soldBy: it.soldBy,
         category: it.category,
         krogerCategories: [],
-        imageUrl: null,
+        // A new cutout, or the one an earlier scan of this deal saved.
+        imageUrl: pictures.get(refs[i].id) ?? ((prev?.exists && (prev.get("imageUrl") as string | null | undefined)) || null),
         regularPrice: it.regularPrice,
         salePrice: it.salePrice,
         savings,
@@ -411,6 +428,7 @@ export async function scanAd(
         regularPrice: deal.regularPrice,
         promo: deal.promo ?? null,
         category: deal.category,
+        imageUrl: deal.imageUrl,
         confirmations: deal.confirmations,
       });
     });
@@ -423,6 +441,7 @@ export async function scanAd(
     const writer = db.bulkWriter();
     old.forEach((d) => writer.delete(d.ref));
     await writer.close();
+    await deleteDealImages(old.map((d) => d.id));
   }
 
   // The same page scanned twice (by anyone) earns no second reward.

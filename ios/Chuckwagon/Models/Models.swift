@@ -83,6 +83,21 @@ struct Deal: Identifiable, Codable, Hashable {
     var fromShopperPhoto: Bool { source == "shopper-ad" }
 
     var perUnit: String { soldBy == "WEIGHT" ? "/lb" : "" }
+
+    /// Icon shown when a deal has no picture (e.g. a scanned ad item we couldn't cut out).
+    var categorySymbol: String {
+        switch category {
+        case "meat": return "fork.knife"
+        case "seafood": return "fish"
+        case "produce": return "carrot"
+        case "dairy": return "cup.and.saucer"
+        case "bakery": return "birthday.cake"
+        case "pantry": return "shippingbox"
+        case "frozen": return "snowflake"
+        case "household": return "house"
+        default: return "basket"
+        }
+    }
 }
 
 /// "Worth buying extra": from the backend's stock-up rules (functions/src/stockUp.ts).

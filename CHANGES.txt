@@ -11,6 +11,9 @@ Build 7 (0.1.0)
 - Weekly ads: pick several pages from Photos at once (up to 10), in order. They count as one ad, so if only one page shows the dates the prices are good for, the other pages use those dates. Try it with screenshots of a store's ad website, like Brookshire Brothers, where the dates are only at the top.
 - If none of the pages show dates, we use the dates from that store's ad someone scanned recently, or guess this week's ad (Wednesday to Tuesday). Guessed dates are marked "GUESSED" under "Sale dates". Tap "Change dates" to fix them for every page you scanned.
 - Pages you scan one at a time with the camera also count as one ad until you leave the scan screen.
+- Deals from a weekly ad you scan now show the product's picture, cut from the ad page. Scan an ad page and check that the pictures match the items.
+- Deals without a picture show an icon for their kind of food (meat, produce, dairy and so on) instead of a basket.
+[Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]
 [Needs a Firebase deploy of functions (scanAdPhoto, new fixAdDates) before this build reaches testers. The backend part works for older builds too: their date-less pages now get borrowed dates instead of an error.]
 
 ========================================

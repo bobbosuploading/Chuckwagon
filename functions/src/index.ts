@@ -8,7 +8,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import type { PlanProgress } from "./planProgress";
 import { ReceiptError, scanReceipt } from "./receipts";
-import { AdScanError, fixAdScanDates, scanAd } from "./adScans";
+import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
+import { deleteDealImages, sweepOldDealImages } from "./dealImages";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
 import { appSiteAssociation, MealShareError, SHARE_ID, shareMeals, SharedMeals, sharePageHtml } from "./sharedMeals";
 
@@ -348,6 +350,29 @@ export const scanAdPhoto = onCall(
       if (err instanceof AdScanError) throw new HttpsError("failed-precondition", err.message);
       throw new HttpsError("internal", PHOTO_FAILED);
     }
+  }
+);
+
+/**
+ * Nightly: removes deals from shopper ad photos whose ad has ended, with their pictures, and
+ * any leftover pictures older than an ad can run. (A store's ended deals also go when someone
+ * scans it again; this catches stores nobody scans again.)
+ */
+export const cleanEndedAdScans = onSchedule(
+  { schedule: "every day 03:15", timeZone: "America/Chicago", memory: "256MiB" },
+  async () => {
+    const db = getFirestore();
+    const day = today();
+    const scanned = await db.collection("deals").where("source", "==", SHOPPER_AD).get();
+    const ended = scanned.docs.filter((d) => String(d.get("validTo") ?? "").slice(0, 10) < day);
+    if (ended.length) {
+      const writer = db.bulkWriter();
+      ended.forEach((d) => writer.delete(d.ref));
+      await writer.close();
+      await deleteDealImages(ended.map((d) => d.id));
+    }
+    const swept = await sweepOldDealImages();
+    logger.info("Ended ad scans cleaned", { deals: ended.length, oldPictures: swept });
   }
 );
 
