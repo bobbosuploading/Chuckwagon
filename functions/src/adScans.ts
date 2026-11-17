@@ -6,7 +6,11 @@
  *
  * Safety rules, so one photo can't do much harm:
  * - A store whose ad we already load automatically can't be scanned: the feed always wins.
- * - The ad must print dates, it must be good today, and its deals drop off when it ends.
+ * - The ad must be good today, and its deals drop off when it ends. Many store websites
+ *   only print the dates on the first page, so a page without dates borrows them: from the
+ *   other pages the shopper scanned with it, else a recent scan of the same store's ad, else
+ *   the usual Wednesday-to-Tuesday week. The app shows guessed dates so the shopper can fix
+ *   them (fixAdScanDates).
  * - The name on the ad must match the store.
  * - Deals are labeled as coming from a shopper's photo, and a second matching scan
  *   "confirms" them (confirmations).
@@ -27,6 +31,17 @@ export const SHOPPER_AD = "shopper-ad";
 
 /** Longest an ad can run, counted from today. Weekly ads run 7 days; some run two weeks. */
 const MAX_AD_DAYS = 21;
+
+/**
+ * Day of the week most weekly ads start, when a page doesn't print its dates: 3 = Wednesday.
+ * Most Texas grocers (H-E-B, Brookshire Brothers, Lowe's Market, ALDI) run Wednesday to Tuesday.
+ * Add a chain here if its ad starts on another day.
+ */
+const AD_START_DAY: { chain: RegExp; day: number }[] = [];
+const DEFAULT_AD_START_DAY = 3;
+
+/** Where an ad's dates came from. Anything but "printed" is a guess the shopper can change. */
+export type DatesSource = "printed" | "other-pages" | "recent-scan" | "usual-week" | "shopper";
 
 /**
  * Chains whose ads we load automatically. A shopper can't add a new store for these from an
@@ -96,6 +111,8 @@ export interface AdScanResult {
   newStore: boolean;
   validFrom: string | null;
   validTo: string;
+  /** Where validFrom/validTo came from: "printed" on this page, or a guess (see DatesSource). */
+  datesSource: DatesSource;
   deals: ScannedDeal[];
   inputTokens: number;
   outputTokens: number;
@@ -108,6 +125,53 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const letters = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const isDate = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** The Wednesday-to-Tuesday (or the chain's usual) week that today falls in. */
+export function usualAdWeek(chain: string, today: string): { validFrom: string; validTo: string } {
+  const start = AD_START_DAY.find((c) => c.chain.test(chain))?.day ?? DEFAULT_AD_START_DAY;
+  const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+  const validFrom = addDays(today, -((weekday - start + 7) % 7));
+  return { validFrom, validTo: addDays(validFrom, 6) };
+}
+
+/** Why a pair of ad dates can't be used, or null when they're fine for an ad that's on now. */
+export function adDatesProblem(validFrom: string | null, validTo: string, today: string): string | null {
+  if (validTo < today) return `This ad ended ${validTo}. Scan this week's ad instead.`;
+  if (validTo > addDays(today, MAX_AD_DAYS) || (validFrom && (validFrom > addDays(today, 7) || validFrom > validTo))) {
+    return "The dates on this ad don't look like this week's. Check the photo and try again.";
+  }
+  return null;
+}
+
+/**
+ * Dates for a page that doesn't print them: the dates the app already has for this ad (from the
+ * other pages scanned with it, or typed by the shopper), else the end date most of this store's
+ * current shopper-ad deals share (a recent scan of the same ad), else the chain's usual week.
+ */
+async function borrowedDates(
+  db: Firestore,
+  dealStoreId: string,
+  chain: string,
+  today: string,
+  fromApp: { validFrom: string | null; validTo: string | null }
+): Promise<{ validFrom: string | null; validTo: string; datesSource: DatesSource }> {
+  if (isDate(fromApp.validTo) && !adDatesProblem(isDate(fromApp.validFrom) ? fromApp.validFrom : null, fromApp.validTo, today)) {
+    return { validFrom: isDate(fromApp.validFrom) ? fromApp.validFrom : null, validTo: fromApp.validTo, datesSource: "other-pages" };
+  }
+  const current = await db.collection("deals").where("storeId", "==", dealStoreId).where("source", "==", SHOPPER_AD).get();
+  const counts = new Map<string, number>();
+  for (const d of current.docs) {
+    const to = String(d.get("validTo") ?? "").slice(0, 10);
+    if (isDate(to) && !adDatesProblem(null, to, today)) counts.set(to, (counts.get(to) ?? 0) + 1);
+  }
+  const common = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0]?.[0];
+  if (common) {
+    // Deals keep only the end date; the ad most likely started 6 days before.
+    const from = addDays(common, -6);
+    return { validFrom: from > addDays(today, 7) ? null : from, validTo: common, datesSource: "recent-scan" };
+  }
+  return { ...usualAdWeek(chain, today), datesSource: "usual-week" };
+}
 
 /** True when the name printed on the ad is the same chain as the store ("Aldi" vs "ALDI"). */
 export function sameChain(printed: string | null, chain: string): boolean {
@@ -237,7 +301,9 @@ export async function scanAd(
   where: ScanWhere,
   imageBase64: string,
   mediaType: "image/jpeg" | "image/png" | "image/webp",
-  today: string
+  today: string,
+  /** Dates the app already has for this ad, used only when this page doesn't print any. */
+  knownDates: { validFrom: string | null; validTo: string | null } = { validFrom: null, validTo: null }
 ): Promise<AdScanResult> {
   const response = await anthropic.beta.messages.parse({
     model: AD_SCAN_MODEL,
@@ -259,18 +325,21 @@ export async function scanAd(
   if (ad.kind === "coupon") throw new AdScanError("Coupons can't be scanned yet. Weekly ad pages work!");
   if (ad.kind !== "weekly-ad") throw new AdScanError("That doesn't look like a store's weekly ad.");
 
-  // Dates: the ad must say when it ends, and be good today.
-  const validTo = isDate(ad.validTo) ? ad.validTo : null;
-  const validFrom = isDate(ad.validFrom) ? ad.validFrom : null;
-  if (!validTo) {
-    throw new AdScanError("We couldn't find the dates this ad is good for. Include the part that says when prices end (often at the top or bottom).");
-  }
-  if (validTo < today) throw new AdScanError(`This ad ended ${validTo}. Scan this week's ad instead.`);
-  if (validTo > addDays(today, MAX_AD_DAYS) || (validFrom && validFrom > addDays(today, 7))) {
-    throw new AdScanError("The dates on this ad don't look like this week's. Check the photo and try again.");
+  // Printed dates must be for an ad that's on now.
+  const printedTo = isDate(ad.validTo) ? ad.validTo : null;
+  const printedFrom = isDate(ad.validFrom) ? ad.validFrom : null;
+  if (printedTo) {
+    const problem = adDatesProblem(printedFrom, printedTo, today);
+    if (problem) throw new AdScanError(problem);
   }
 
   const target = await findTarget(db, ad.storeName, where);
+
+  // A page without dates (most middle pages on store websites) borrows them.
+  const dates = printedTo
+    ? { validFrom: printedFrom, validTo: printedTo, datesSource: "printed" as DatesSource }
+    : await borrowedDates(db, target.dealStoreId, target.chain, today, knownDates);
+  const { validFrom, validTo, datesSource } = dates;
 
   // The automatic feed always wins: don't mix shopper photos into a store we already load.
   // (Collectors replace all of a store's deals each run, so a fed store holds no shopper deals.)
@@ -369,6 +438,7 @@ export async function scanAd(
     printedStore: ad.storeName,
     validFrom,
     validTo,
+    datesSource,
     items: ad.items,
     fingerprint,
     duplicate: !dupe.empty,
@@ -383,8 +453,50 @@ export async function scanAd(
     newStore: target.newStore !== null,
     validFrom,
     validTo,
+    datesSource,
     deals,
     inputTokens: response.usage.input_tokens,
     outputTokens: response.usage.output_tokens,
   };
+}
+
+/**
+ * The shopper changed the dates for pages they scanned (the app guessed them, or a later page
+ * printed different ones). Moves this shopper's deals at the store from one end date to another.
+ * Returns how many deals moved. No AI call, so it's cheap; it only touches deals this shopper scanned.
+ */
+export async function fixAdScanDates(
+  db: Firestore,
+  uid: string,
+  storeId: string,
+  fromValidTo: string,
+  validFrom: string | null,
+  validTo: string,
+  today: string
+): Promise<number> {
+  if (!isDate(fromValidTo) || !isDate(validTo) || (validFrom !== null && !isDate(validFrom))) {
+    throw new AdScanError("Those dates don't look right.");
+  }
+  const problem = adDatesProblem(validFrom, validTo, today);
+  if (problem) throw new AdScanError(problem.replace("Scan this week's ad instead.", "Pick dates that include today."));
+  const store = await db.doc(`stores/${storeId}`).get();
+  if (!store.exists) throw new AdScanError("That store wasn't found.");
+  const dealStoreId = (store.get("dealsFrom") as string | undefined) ?? storeId;
+  const mine = await db
+    .collection("deals")
+    .where("storeId", "==", dealStoreId)
+    .where("source", "==", SHOPPER_AD)
+    .get();
+  const moving = mine.docs.filter(
+    (d) => String(d.get("validTo") ?? "").slice(0, 10) === fromValidTo && ((d.get("scannedBy") as string[] | undefined) ?? []).includes(uid)
+  );
+  if (fromValidTo === validTo || moving.length === 0) return 0;
+  const writer = db.bulkWriter();
+  moving.forEach((d) => writer.update(d.ref, { validTo }));
+  const scans = await db.collection("adScans").where("uid", "==", uid).where("dealStoreId", "==", dealStoreId).get();
+  scans.docs
+    .filter((d) => d.get("validTo") === fromValidTo)
+    .forEach((d) => writer.update(d.ref, { validFrom, validTo, datesSource: "shopper", datesFixedFrom: fromValidTo }));
+  await writer.close();
+  return moving.length;
 }
