@@ -82,6 +82,7 @@ enum Backend {
     /// each step), on the main thread.
     static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,
                           includeMeals: [MealPlan.Meal] = [],
+                          theme: String? = nil, nightThemes: [String]? = nil,
                           onProgress: @escaping @MainActor @Sendable (PlanProgress) -> Void = { _ in }) async throws -> MealPlan {
         // Watch planProgress/{id}; the backend writes it as the plan takes shape and deletes it when done.
         let progressId = UUID().uuidString
@@ -110,6 +111,9 @@ enum Backend {
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
         }
+        // What the shopper is in the mood for: every meal, and/or one theme per meal ("" = any).
+        if let theme { payload["theme"] = theme }
+        if let nightThemes { payload["nightThemes"] = nightThemes }
         // Saved meals to build around: their recipes, so the planner can keep them as they are.
         if !includeMeals.isEmpty {
             payload["includeMeals"] = includeMeals.map { meal in

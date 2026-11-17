@@ -35,6 +35,12 @@ on:
       include_meals:
         description: "Saved meals to build around, by name, separated by ; (optional)"
         default: ""
+      theme:
+        description: "Mood for every meal (e.g. Mexican, seafood, international) (optional)"
+        default: ""
+      night_themes:
+        description: "Theme per meal, separated by ; with blanks for any (e.g. Mexican;;Seafood) (optional)"
+        default: ""
       variants:
         description: "Compare thinking efforts, comma-separated: medium, low, high (blank = the app's setting only)"
         default: ""
@@ -75,3 +81,5 @@ jobs:
           STORE_IDS: ${{ inputs.also_stores }}
           VARIANTS: ${{ inputs.variants }}
           INCLUDE_MEALS: ${{ inputs.include_meals }}
+          THEME: ${{ inputs.theme }}
+          NIGHT_THEMES: ${{ inputs.night_themes }}

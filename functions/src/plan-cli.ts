@@ -118,6 +118,9 @@ async function main() {
     budget: num(process.env.BUDGET),
     extraMeals: num(process.env.EXTRA),
     includeMeals: await savedMeals(db, process.env.INCLUDE_MEALS),
+    theme: process.env.THEME || undefined,
+    // NIGHT_THEMES: one per meal, separated by ";" (blank = any), e.g. "Mexican;;Seafood".
+    nightThemes: process.env.NIGHT_THEMES ? process.env.NIGHT_THEMES.split(";") : undefined,
   };
   const anthropic = new Anthropic();
   const model = process.env.MODEL || undefined;
