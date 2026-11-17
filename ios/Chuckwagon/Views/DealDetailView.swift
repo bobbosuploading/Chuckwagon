@@ -75,7 +75,7 @@ struct DealDetailView: View {
             image.resizable().scaledToFit()
         } placeholder: {
             if deal.imageUrl == nil {
-                Image(systemName: "basket")
+                Image(systemName: deal.categorySymbol)
                     .font(.system(size: 60))
                     .foregroundStyle(Theme.ink.opacity(0.2))
             } else {
