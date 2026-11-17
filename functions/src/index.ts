@@ -8,7 +8,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import type { PlanProgress } from "./planProgress";
 import { ReceiptError, scanReceipt } from "./receipts";
-import { AdScanError, scanAd } from "./adScans";
+import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
+import { deleteDealImages, sweepOldDealImages } from "./dealImages";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
 import { appSiteAssociation, MealShareError, SHARE_ID, shareMeals, SharedMeals, sharePageHtml } from "./sharedMeals";
 
@@ -286,14 +288,16 @@ const AD_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };
  * "Scan a weekly ad": reads one page of a printed weekly ad and saves its deals, for stores
  * whose ad we can't load automatically (see adScans.ts).
  * Data: { storeId } for one of the shopper's stores, or { zip, lat?, lng? } for a store we
- * don't have yet (named from the ad); plus { imageBase64, mediaType }.
+ * don't have yet (named from the ad); plus { imageBase64, mediaType }. Optional
+ * { validFrom, validTo }: dates the app already has for this ad (from other pages scanned with
+ * it), used when this page doesn't print any.
  */
 export const scanAdPhoto = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: PHOTO_TIMEOUT_SECONDS, memory: "512MiB" },
   async (request) => {
     requireApp(request, "scanAdPhoto");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to scan ads");
-    const { storeId, storeName, zip, lat, lng, imageBase64, mediaType } = (request.data ?? {}) as {
+    const { storeId, storeName, zip, lat, lng, imageBase64, mediaType, validFrom, validTo } = (request.data ?? {}) as {
       storeId?: string;
       storeName?: string;
       zip?: string;
@@ -301,6 +305,8 @@ export const scanAdPhoto = onCall(
       lng?: number;
       imageBase64?: string;
       mediaType?: string;
+      validFrom?: string;
+      validTo?: string;
     };
     if ((!storeId && !zip) || !imageBase64) throw new HttpsError("invalid-argument", "storeId or zip, and imageBase64, are required");
     if (imageBase64.length > 7_000_000) throw new HttpsError("invalid-argument", "That photo is too large.");
@@ -332,8 +338,12 @@ export const scanAdPhoto = onCall(
         lat: typeof lat === "number" && Number.isFinite(lat) ? lat : undefined,
         lng: typeof lng === "number" && Number.isFinite(lng) ? lng : undefined,
       };
-      const result = await scanAd(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, where, imageBase64, type, day);
-      logger.info("Ad scanned", { uid, storeId: result.storeId, newStore: result.newStore, deals: result.deals.length });
+      const known = {
+        validFrom: typeof validFrom === "string" ? validFrom.slice(0, 10) : null,
+        validTo: typeof validTo === "string" ? validTo.slice(0, 10) : null,
+      };
+      const result = await scanAd(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), uid, where, imageBase64, type, day, known);
+      logger.info("Ad scanned", { uid, storeId: result.storeId, newStore: result.newStore, deals: result.deals.length, datesSource: result.datesSource });
       return { ...result, reward: await rewardReceipt(db, uid, day, result.duplicate, result.deals.length) };
     } catch (err) {
       logger.warn("Ad scan failed", err);
@@ -342,6 +352,57 @@ export const scanAdPhoto = onCall(
     }
   }
 );
+
+/**
+ * Nightly: removes deals from shopper ad photos whose ad has ended, with their pictures, and
+ * any leftover pictures older than an ad can run. (A store's ended deals also go when someone
+ * scans it again; this catches stores nobody scans again.)
+ */
+export const cleanEndedAdScans = onSchedule(
+  { schedule: "every day 03:15", timeZone: "America/Chicago", memory: "256MiB" },
+  async () => {
+    const db = getFirestore();
+    const day = today();
+    const scanned = await db.collection("deals").where("source", "==", SHOPPER_AD).get();
+    const ended = scanned.docs.filter((d) => String(d.get("validTo") ?? "").slice(0, 10) < day);
+    if (ended.length) {
+      const writer = db.bulkWriter();
+      ended.forEach((d) => writer.delete(d.ref));
+      await writer.close();
+      await deleteDealImages(ended.map((d) => d.id));
+    }
+    const swept = await sweepOldDealImages();
+    logger.info("Ended ad scans cleaned", { deals: ended.length, oldPictures: swept });
+  }
+);
+
+/**
+ * "Change dates" on the ad scan screen: moves the deals this shopper scanned at a store from one
+ * end date to another, for pages that didn't print their dates (or printed them wrong).
+ * Data: { storeId, fromValidTo, validFrom?, validTo }. No AI call.
+ */
+export const fixAdDates = onCall(async (request) => {
+  requireApp(request, "fixAdDates");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to change ad dates");
+  const { storeId, fromValidTo, validFrom, validTo } = (request.data ?? {}) as {
+    storeId?: string;
+    fromValidTo?: string;
+    validFrom?: string | null;
+    validTo?: string;
+  };
+  if (typeof storeId !== "string" || !storeId || storeId.includes("/") || typeof fromValidTo !== "string" || typeof validTo !== "string") {
+    throw new HttpsError("invalid-argument", "storeId, fromValidTo and validTo are required");
+  }
+  try {
+    const moved = await fixAdScanDates(getFirestore(), request.auth.uid, storeId, fromValidTo, typeof validFrom === "string" ? validFrom : null, validTo, today());
+    logger.info("Ad dates changed", { uid: request.auth.uid, storeId, fromValidTo, validTo, moved });
+    return { moved };
+  } catch (err) {
+    if (err instanceof AdScanError) throw new HttpsError("failed-precondition", err.message);
+    logger.warn("Changing ad dates failed", err);
+    throw new HttpsError("internal", "Couldn't change the dates. Try again.");
+  }
+});
 
 /** Shared deals cost about the same as an ad scan (one Haiku call). */
 const SHARE_LIMITS = { perUserPerDay: 10, allUsersPerDay: 300 };

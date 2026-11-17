@@ -284,21 +284,43 @@ enum Backend {
         var newStore: Bool
         var validFrom: String?
         var validTo: String
+        /// "printed" when the page showed its dates. Otherwise they were borrowed:
+        /// "other-pages", "recent-scan" or "usual-week". Missing from older backends.
+        var datesSource: String?
         var deals: [Deal]
         var reward: ReceiptScan.Reward?
+
+        var datesPrinted: Bool { datesSource == nil || datesSource == "printed" }
     }
 
     /// Sends one page of a printed weekly ad. Pass a store, or nil to add the store named on
     /// the ad near the shopper's ZIP.
-    static func scanAd(storeId: String?, storeName: String = "", zip: String, latitude: Double, longitude: Double, image: UIImage) async throws -> AdScan {
+    /// `validFrom`/`validTo`: dates already known for this ad (from other pages), used when this
+    /// page doesn't print any.
+    static func scanAd(storeId: String?, storeName: String = "", zip: String, latitude: Double, longitude: Double,
+                       validFrom: String? = nil, validTo: String? = nil, image: UIImage) async throws -> AdScan {
         guard let jpeg = image.uploadJPEG() else {
             throw NSError(domain: "Chuckwagon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't read that photo."])
         }
         var data: [String: Any] = ["imageBase64": jpeg.base64EncodedString(), "mediaType": "image/jpeg"]
         addStore(to: &data, storeId: storeId, storeName: storeName, zip: zip, latitude: latitude, longitude: longitude)
+        if let validTo {
+            data["validTo"] = validTo
+            if let validFrom { data["validFrom"] = validFrom }
+        }
         let result = try await callPhotoFunction("scanAdPhoto", data)
         let json = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(AdScan.self, from: json)
+    }
+
+    /// Moves the deals this shopper scanned at a store from one end date to new dates
+    /// (for ad pages whose dates were guessed). Returns how many deals moved.
+    @discardableResult
+    static func fixAdDates(storeId: String, fromValidTo: String, validFrom: String?, validTo: String) async throws -> Int {
+        var data: [String: Any] = ["storeId": storeId, "fromValidTo": fromValidTo, "validTo": validTo]
+        if let validFrom { data["validFrom"] = validFrom }
+        let result = try await Functions.functions().httpsCallable("fixAdDates").call(data)
+        return ((result.data as? [String: Any])?["moved"] as? Int) ?? 0
     }
 
     /// A photo scan's store: one from the list, or a store that isn't in Chuckwagon yet (by name, near the ZIP).
@@ -411,6 +433,12 @@ enum Backend {
     /// Words a shopper can act on, instead of "DEADLINE EXCEEDED" or "INTERNAL".
     /// Our functions already send friendly words for problems the shopper can fix.
     /// `planning` is for meal plans, where a timeout means the model was slow, not the signal.
+    /// True when the backend said a daily limit was reached (like 10 ad pages a day).
+    static func isLimitReached(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == FunctionsErrorDomain && FunctionsErrorCode(rawValue: nsError.code) == .resourceExhausted
+    }
+
     static func friendlyMessage(for error: Error, planning: Bool = false) -> String {
         let nsError = error as NSError
         let slowMessage = planning ? slowPlanMessage : slowMessage

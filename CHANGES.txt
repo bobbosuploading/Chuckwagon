@@ -9,12 +9,19 @@ it goes up, add a new "Build N" section at the top of this list.
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
+- Weekly ads: pick several pages from Photos at once (up to 10), in order. They count as one ad, so if only one page shows the dates the prices are good for, the other pages use those dates. Try it with screenshots of a store's ad website, like Brookshire Brothers, where the dates are only at the top.
+- If none of the pages show dates, we use the dates from that store's ad someone scanned recently, or guess this week's ad (Wednesday to Tuesday). Guessed dates are marked "GUESSED" under "Sale dates". Tap "Change dates" to fix them for every page you scanned.
+- Pages you scan one at a time with the camera also count as one ad until you leave the scan screen.
+- Deals from a weekly ad you scan now show the product's picture, cut from the ad page. Scan an ad page and check that the pictures match the items.
+- Deals without a picture show an icon for their kind of food (meat, produce, dairy and so on) instead of a basket.
 - Tell us what you're in the mood for. On the plan screen, under "In the mood for", tap one or more quick picks like Mexican, Seafood, Italian or International, or type your own (for example "something spicy"). Your meals follow it and are still built from what's on sale.
 - Want a theme night? Turn on "Pick a theme for each night" and choose one for each meal, like Mexican for meal 1 and Seafood for meal 3. Leave a night on "Any" to let us choose.
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [If build 6 was never uploaded, fold this section into Build 6 and set the build number back to 6.]
 [Scan button is on StoresHomeView.]
+[Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]
+[Needs a Firebase deploy of functions (scanAdPhoto, new fixAdDates) before this build reaches testers. The backend part works for older builds too: their date-less pages now get borrowed dates instead of an error.]
 
 ========================================
 Build 6 (0.1.0)

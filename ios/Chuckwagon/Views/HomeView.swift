@@ -391,7 +391,7 @@ struct DealCard: View {
                 AsyncImage(url: deal.imageUrl.flatMap(URL.init(string:))) { image in
                     image.resizable().scaledToFit()
                 } placeholder: {
-                    Image(systemName: "basket")
+                    Image(systemName: deal.categorySymbol)
                         .font(.largeTitle)
                         .foregroundStyle(Theme.ink.opacity(0.2))
                 }
