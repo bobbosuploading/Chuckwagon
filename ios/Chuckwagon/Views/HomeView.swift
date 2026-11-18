@@ -300,6 +300,13 @@ struct HomeView: View {
                     .padding(.top, 40)
             }
         } else {
+            if let datesLine {
+                Label(datesLine, systemImage: "calendar")
+                    .font(Theme.body(.footnote, weight: .semibold))
+                    .foregroundStyle(Theme.ink.opacity(0.7))
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if stockUpOnly {
                 Label("\(visibleDeals.count) prices worth buying extra of, from every aisle. Tap STOCK UP on a deal for how much to buy and how to keep it.",
                       systemImage: "shippingbox.fill")
@@ -318,6 +325,32 @@ struct HomeView: View {
             }
             .padding(.horizontal, 20)
         }
+    }
+
+    /// When these prices are good: the ad's end date for ad deals (H-E-B, ALDI, scanned ads),
+    /// and when we last checked for deals with no end date (Kroger).
+    private var datesLine: String? {
+        let ends = deals.compactMap { $0.validTo.map { String($0.prefix(10)) } }
+        var parts: [String] = []
+        if let end = Dictionary(grouping: ends, by: { $0 }).max(by: { $0.value.count < $1.value.count })?.key {
+            parts.append("Sale prices good through \(Self.adDay(end))")
+        }
+        if let checked = deals.filter({ $0.validTo == nil }).compactMap({ $0.fetchedAt?.dateValue() }).max() {
+            parts.append("Prices checked \(Self.checkedDay(checked))")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func adDay(_ iso: String) -> String {
+        guard let date = try? Date(iso, strategy: Date.ISO8601FormatStyle(timeZone: .current).year().month().day()) else { return iso }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    private static func checkedDay(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "today" }
+        if cal.isDateInYesterday(date) { return "yesterday" }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 
     // MARK: Shared by shoppers

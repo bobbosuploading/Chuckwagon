@@ -75,6 +75,8 @@ struct Deal: Identifiable, Codable, Hashable {
     var stockUp: StockUp?
     /// When the sale ends (ISO date), if known.
     var validTo: String?
+    /// When a collector or scan last saved this deal.
+    var fetchedAt: Timestamp?
     /// Where the deal came from; "shopper-ad" when read from a shopper's photo of a printed ad.
     var source: String?
     /// For shopper-ad deals: how many shoppers' scans showed it.

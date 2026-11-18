@@ -6,6 +6,13 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 8 (0.1.0)
+========================================
+- Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
+- Open H-E-B and a Kroger store and check that the dates look right.
+[If build 7 was never uploaded, fold this section into Build 7 and set the build number back to 7.]
+
+========================================
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
