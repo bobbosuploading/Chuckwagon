@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { Category } from "./config";
 import type { Deal } from "./collectKroger";
 import { StockUp, stockUpTip } from "./stockUp";
-import { MATCH_MODEL, priceRegularItems } from "./priceItems";
+import { ItemPrice, MATCH_MODEL, priceRegularItems } from "./priceItems";
 import { liveSharedDeals } from "./sharedDeals";
 import { MealStreamReader, PlanProgress } from "./planProgress";
 
@@ -254,6 +254,9 @@ export interface PricedListItem {
   regularPrice: number | null;
   lineTotal: number | null;
   lineSavings: number | null;
+  /** Sale items whose ad didn't print a regular price: savings worked out from an everyday
+   *  price (often Kroger's), so only an estimate. Null when there's no good match. */
+  lineSavingsEstimate?: number | null;
   forMeals: string[];
   /** For items not on sale: where the price came from ("store", "receipt", or "estimate"
    *  when we have no prices for this store and a nearby store's price stands in). */
@@ -274,6 +277,8 @@ export interface StoreTotal {
   items: number;
   saleItems: number;
   savings: number;
+  /** Estimated savings on sale items whose ad didn't print a regular price. */
+  savingsEstimate: number;
   /** Everything priced at this store, sale and regular. */
   total: number;
   /** Set when this store uses a nearby store's prices, e.g. "Prices from Kroger, Sugar Land (14 mi away)". */
@@ -293,7 +298,12 @@ export interface MealPlan {
   notes: string;
   totals: {
     saleItems: number;
+    /** Savings from regular prices the stores printed. */
     savings: number;
+    /** Extra savings estimated from everyday prices, for sale items whose ad printed no regular price. */
+    savingsEstimate: number;
+    /** Sale items with no known or estimated savings. */
+    saleItemsNoSavings: number;
     itemsNotPriced: number;
     /** Items not on sale, at everyday prices. */
     regularItems: number;
@@ -370,16 +380,38 @@ interface PricedDraft {
   groceryList: PricedListItem[];
   saleItems: number;
   savings: number;
+  savingsEstimate: number;
+  saleItemsNoSavings: number;
   itemsNotPriced: number;
   regularItems: number;
   estimatedTotal: number;
   model: string;
 }
 
+/**
+ * Estimated savings on a sale line whose ad printed no regular price, from the everyday price
+ * of the matching product (the store's own, or Kroger's). Null when the match can't be trusted:
+ * per-lb vs. package prices, an everyday price at or below the sale price, or one so far above it
+ * that it's likely a different size or product.
+ */
+export function estimateLineSavings(
+  salePrice: number,
+  need: { byWeight: boolean; qty: number },
+  match: ItemPrice | null
+): number | null {
+  if (!match || match.perLb !== need.byWeight || salePrice <= 0) return null;
+  const regular = match.regularUnitPrice;
+  if (regular <= salePrice || regular > salePrice * 5) return null;
+  const save = round2((regular - salePrice) * need.qty);
+  return save > 0 ? save : null;
+}
+
 /** Totals for a priced list. Lines with no price are counted, not added. */
 export function listTotals(list: PricedListItem[]) {
   let saleItems = 0;
   let savings = 0;
+  let savingsEstimate = 0;
+  let saleItemsNoSavings = 0;
   let regularItems = 0;
   let itemsNotPriced = 0;
   for (const li of list) {
@@ -387,10 +419,20 @@ export function listTotals(list: PricedListItem[]) {
     else if (li.onSale) saleItems += li.lineTotal;
     else regularItems += li.lineTotal;
     if (li.lineSavings !== null) savings += li.lineSavings;
+    else if (li.lineSavingsEstimate != null) savingsEstimate += li.lineSavingsEstimate;
+    else if (li.onSale) saleItemsNoSavings++;
   }
   saleItems = round2(saleItems);
   regularItems = round2(regularItems);
-  return { saleItems, savings: round2(savings), itemsNotPriced, regularItems, estimatedTotal: round2(saleItems + regularItems) };
+  return {
+    saleItems,
+    savings: round2(savings),
+    savingsEstimate: round2(savingsEstimate),
+    saleItemsNoSavings,
+    itemsNotPriced,
+    regularItems,
+    estimatedTotal: round2(saleItems + regularItems),
+  };
 }
 
 /** Lowercase words only, each without a plural "s", for loose name matching. */
@@ -506,6 +548,7 @@ export function selectList(fullList: PricedListItem[], chosen: string[], meals: 
       quantityNote,
       lineTotal: li.lineTotal !== null ? round2(li.lineTotal * ratio) : null,
       lineSavings: li.lineSavings !== null ? round2(li.lineSavings * ratio) : null,
+      lineSavingsEstimate: li.lineSavingsEstimate != null ? round2(li.lineSavingsEstimate * ratio) : null,
       forMeals: kept,
     });
   }
@@ -778,6 +821,8 @@ ${lines}`;
     }
     const mainStore = [...saleCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? req.storeId;
     // estimatedPrice is only the model's own budget math; real prices come from our data below.
+    // Sale lines whose ad printed no regular price, so savings get estimated from everyday prices.
+    const needsEstimate = new Map<PricedListItem, { byWeight: boolean; qty: number }>();
     const groceryList: PricedListItem[] = plan.groceryList.map(({ estimatedPrice: _guess, ...li }) => {
       const deal = li.dealId ? deals.get(li.dealId) : undefined;
       if (!deal) {
@@ -791,7 +836,7 @@ ${lines}`;
       const qty = byWeight ? li.pounds : li.buyCount;
       const lineTotal = qty && deal.salePrice !== null ? round2(deal.salePrice * qty) : null;
       const lineSavings = qty && deal.savings !== null ? round2(deal.savings * qty) : null;
-      return {
+      const line: PricedListItem = {
         ...li,
         dealId: dealDocIds.get(li.dealId!) ?? `${deal.storeId}_${deal.productId}`,
         onSale: true,
@@ -805,20 +850,25 @@ ${lines}`;
         stockUp: deal.stockUp ?? stockUpTip(deal),
         checked: false,
       };
+      if (lineSavings === null && deal.regularPrice === null && deal.salePrice !== null && qty) {
+        needsEstimate.set(line, { byWeight, qty });
+      }
+      return line;
     });
 
     // Price the items that aren't on sale from each store's everyday prices.
     const regular = groceryList.filter((li) => !li.onSale);
+    const estimating = [...needsEstimate.keys()];
     report({ stage: "pricing", meals: progressMeals() });
     const pricingStarted = Date.now();
     const matched = await priceRegularItems(
       db,
       anthropic,
-      regular.map((li) => ({ item: li.item, quantityNote: li.quantityNote, buyCount: li.buyCount, storeId: li.storeId }))
+      [...regular, ...estimating].map((li) => ({ item: li.item, quantityNote: li.quantityNote, buyCount: li.buyCount, storeId: li.storeId }))
     ).catch((err) => {
       // Pricing regular items is a bonus; never fail the plan over it.
       console.warn("Regular-price matching failed", err);
-      return { prices: regular.map(() => null), inputTokens: 0, outputTokens: 0 };
+      return { prices: [...regular, ...estimating].map(() => null), inputTokens: 0, outputTokens: 0 };
     });
     addTokens(MATCH_MODEL, matched.inputTokens, matched.outputTokens);
     timingsMs[`pricing${draftNo}`] = Date.now() - pricingStarted;
@@ -830,6 +880,11 @@ ${lines}`;
       li.priceSource = p.source;
       const qty = p.perLb ? ` | ${p.quantity} lb` : p.quantity > 1 ? ` | x${p.quantity}` : "";
       li.pricedAs = `${p.product}${p.size ? ` | ${p.size}` : ""}${qty}`;
+    });
+    estimating.forEach((li, i) => {
+      const p = matched.prices[regular.length + i];
+      const need = needsEstimate.get(li)!;
+      li.lineSavingsEstimate = estimateLineSavings(li.salePrice!, need, p);
     });
     // Budget math covers only the main meals; extra ideas wait until the shopper picks them.
     const allNames = plan.meals.map((m) => m.name);
@@ -941,7 +996,7 @@ function assemblePlan(a: {
   hasOptions: boolean;
 }): PickedParts {
   const { meals, groceryList, budget } = a;
-  const { saleItems, savings, itemsNotPriced, regularItems, estimatedTotal } = listTotals(groceryList);
+  const { saleItems, savings, savingsEstimate, saleItemsNoSavings, itemsNotPriced, regularItems, estimatedTotal } = listTotals(groceryList);
 
   // Totals per store, busiest store first.
   const stores: StoreTotal[] = a.stores
@@ -953,6 +1008,7 @@ function assemblePlan(a: {
         items: items.length,
         saleItems: round2(items.reduce((t, li) => t + (li.onSale ? li.lineTotal ?? 0 : 0), 0)),
         savings: round2(items.reduce((t, li) => t + (li.lineSavings ?? 0), 0)),
+        savingsEstimate: round2(items.reduce((t, li) => t + (li.lineSavings === null ? li.lineSavingsEstimate ?? 0 : 0), 0)),
         total: round2(items.reduce((t, li) => t + (li.lineTotal ?? 0), 0)),
         ...(pricesNote ? { pricesNote } : {}),
       };
@@ -999,6 +1055,8 @@ function assemblePlan(a: {
     totals: {
       saleItems,
       savings,
+      savingsEstimate,
+      saleItemsNoSavings,
       itemsNotPriced,
       regularItems,
       estimatedTotal,
