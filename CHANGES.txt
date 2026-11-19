@@ -6,6 +6,14 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 8 (0.1.0)
+========================================
+- When a meal plan can't be made, you now see why in a message right away. Before, the "Rustling up supper" screen flashed and you were sent back to the form with no explanation (the reason was hidden at the very bottom of the form). The reason also stays at the top of the form after you tap OK.
+- Fixed: "Plan my meals" could flash "Rustling up supper" and stop with "Couldn't reach Chuckwagon", even though your plan was still being made (it showed up later in My plans). Now the app keeps waiting and opens the plan when it's ready. Build a few plans, with and without Chef's pick, and check that each one opens.
+- "Couldn't reach Chuckwagon" messages now end with a short code in brackets, like "(network -1004)" or "(server unavailable)". If you see one, send us a screenshot.
+- Tap "Plan my meals" a few times in one day, with and without Chef's pick, and check that the message makes sense when you hit a limit.
+
+========================================
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
