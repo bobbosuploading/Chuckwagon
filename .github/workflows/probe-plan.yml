@@ -1,0 +1,24 @@
+name: Probe plan function (temporary)
+on:
+  push:
+    branches: [claude/project-thread-ucly2t]
+    paths: [.github/workflows/probe-plan.yml]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call without sign-in
+        run: |
+          curl -sS -m 30 -w "\nHTTP %{http_code} in %{time_total}s\n" -X POST -H 'Content-Type: application/json' \
+            -d '{"data":{"storeId":"x"}}' https://us-central1-chuckwagon-ebbcc.cloudfunctions.net/planMealsForStore || true
+      - name: Read recent logs
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" -q
+          rm -f "$RUNNER_TEMP/sa.json"
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="planmealsforstore" AND timestamp>="2026-11-18T23:30:00Z"' \
+            --project chuckwagon-ebbcc --limit 60 --order desc \
+            --format='table(timestamp,severity,httpRequest.status,httpRequest.latency,textPayload,jsonPayload.message)' || true
