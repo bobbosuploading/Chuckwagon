@@ -6,6 +6,12 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 8 (0.1.0)
+========================================
+- When a meal plan can't be made, you now see why in a message right away. Before, the "Rustling up supper" screen flashed and you were sent back to the form with no explanation (the reason was hidden at the very bottom of the form). The reason also stays at the top of the form after you tap OK.
+- Tap "Plan my meals" a few times in one day, with and without Chef's pick, and check that the message makes sense when you hit a limit.
+
+========================================
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
