@@ -443,14 +443,15 @@ enum Backend {
         let nsError = error as NSError
         let slowMessage = planning ? slowPlanMessage : slowMessage
         if nsError.domain == NSURLErrorDomain {
-            return nsError.code == NSURLErrorTimedOut ? slowMessage : offlineMessage
+            // The code (for example "network -1004") tells us which network problem it was.
+            return nsError.code == NSURLErrorTimedOut ? slowMessage : offlineMessage + " (network \(nsError.code))"
         }
         guard nsError.domain == FunctionsErrorDomain, let code = FunctionsErrorCode(rawValue: nsError.code) else {
             return error.localizedDescription
         }
         switch code {
         case .deadlineExceeded: return slowMessage
-        case .unavailable: return offlineMessage
+        case .unavailable: return offlineMessage + " (server unavailable)"
         case .unauthenticated: return "You're signed out. Close the app, open it again and try once more."
         case .internal, .unknown, .dataLoss:
             // Older functions sent raw error text here; only show it when it reads like ours.
