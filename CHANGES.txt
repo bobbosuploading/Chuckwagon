@@ -6,6 +6,11 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 8 (0.1.0)
+========================================
+- Plans no longer say "You save $0.00" when a weekly ad doesn't print regular prices (Brookshire Brothers' ad, for example). We now estimate the regular price from everyday prices, so the plan says "You save about $X", and items show "save ~$X est.". If we can't find a price to compare, the plan shows "On sale $X" and says the ad didn't list regular prices. Scan a Brookshire ad, build a plan, and check that the savings look reasonable.
+
+========================================
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
@@ -18,7 +23,6 @@ Build 7 (0.1.0)
 - Want a theme night? Turn on "Pick a theme for each night" and choose one for each meal, like Mexican for meal 1 and Seafood for meal 3. Leave a night on "Any" to let us choose.
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 - Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
-- Plans no longer say "You save $0.00" when a weekly ad doesn't print regular prices (Brookshire Brothers' ad, for example). We now estimate the regular price from everyday prices, so the plan says "You save about $X", and items show "save ~$X est.". If we can't find a price to compare, the plan shows "On sale $X" and says the ad didn't list regular prices. Scan a Brookshire ad, build a plan, and check that the savings look reasonable.
 - Open H-E-B and a Kroger store and check that the dates look right.
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [Scan button is on StoresHomeView.]
