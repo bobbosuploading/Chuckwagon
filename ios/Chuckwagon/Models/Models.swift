@@ -244,6 +244,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var items: Int
         var saleItems: Double
         var savings: Double
+        /// Estimated savings on sale items whose ad printed no regular price. Older plans don't have it.
+        var savingsEstimate: Double?
         /// Set when this store uses a nearby store's prices.
         var pricesNote: String?
     }
@@ -255,6 +257,43 @@ struct MealPlan: Codable, Identifiable, Hashable {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.date(from: createdAt)
+    }
+
+    /// What the plan's savings line says. Ads that don't print regular prices leave sale items
+    /// with no savings, so "You save $0.00" would be wrong.
+    struct SavingsSummary {
+        /// "YOU SAVE", "YOU SAVE ABOUT", "YOU SAVE AT LEAST" or "ON SALE".
+        var label: String
+        var amount: Double
+        /// A short "save $X" / "save about $X" for lists, or "on sale $X".
+        var short: String
+        /// Set when the number needs explaining.
+        var note: String?
+        /// True when the headline is the sale total, not savings.
+        var showsSaleTotal: Bool { label == "ON SALE" }
+    }
+
+    var savingsSummary: SavingsSummary {
+        let known = totals.savings
+        let estimate = totals.savingsEstimate ?? 0
+        let saleLines = groceryList.filter(\.onSale)
+        // Older plans don't count these, so work it out from the list.
+        let missing = totals.saleItemsNoSavings
+            ?? saleLines.filter { $0.lineSavings == nil && $0.lineSavingsEstimate == nil }.count
+        if estimate > 0 {
+            let total = known + estimate
+            return SavingsSummary(label: "YOU SAVE ABOUT", amount: total, short: "save about \(total.dollars)",
+                                  note: "Some regular prices are estimates")
+        }
+        if known <= 0, !saleLines.isEmpty, missing > 0 {
+            return SavingsSummary(label: "ON SALE", amount: totals.saleItems, short: "on sale \(totals.saleItems.dollars)",
+                                  note: "The ad didn't list regular prices")
+        }
+        if missing > 0 {
+            return SavingsSummary(label: "YOU SAVE AT LEAST", amount: known, short: "save \(known.dollars)+",
+                                  note: "Some ads didn't list regular prices")
+        }
+        return SavingsSummary(label: "YOU SAVE", amount: known, short: "save \(known.dollars)", note: nil)
     }
 
     /// Copies saved check marks onto the grocery list.
@@ -294,6 +333,9 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var regularPrice: Double?
         var lineTotal: Double?
         var lineSavings: Double?
+        /// Sale items whose ad printed no regular price: savings estimated from an everyday
+        /// price (often Kroger's). Older plans don't have it.
+        var lineSavingsEstimate: Double?
         var forMeals: [String]
         /// Which store to buy it at (multi-store plans). Older plans don't have it.
         var storeName: String?
@@ -310,13 +352,18 @@ struct MealPlan: Codable, Identifiable, Hashable {
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs, stockUp, storeId
+            case regularPrice, lineTotal, lineSavings, lineSavingsEstimate, forMeals, storeName, priceSource, pricedAs, stockUp, storeId
         }
     }
 
     struct Totals: Codable, Hashable {
         var saleItems: Double
+        /// Savings from regular prices the stores printed.
         var savings: Double
+        /// Extra savings estimated from everyday prices. Older plans don't have it.
+        var savingsEstimate: Double?
+        /// Sale items with no known or estimated savings. Older plans don't have it.
+        var saleItemsNoSavings: Int?
         var itemsNotPriced: Int
         /// Items not on sale at everyday prices. Older plans don't have it.
         var regularItems: Double?
