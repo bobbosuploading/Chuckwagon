@@ -33,7 +33,9 @@ const ReceiptSchema = z.object({
       regularPrice: z.number().nullable().describe("Regular unit price if the receipt shows it (e.g. 'reg 3.49'), else null"),
       markedSale: z
         .boolean()
-        .describe("True only if the receipt marks this line as a sale, special, price cut or savings. Not because the price looks low."),
+        .describe(
+          "True only if the receipt marks this line itself as a sale, special, price cut or savings. Not because the price looks low, and not because of a savings total at the bottom of the receipt."
+        ),
       category: z.enum(["meat", "seafood", "produce", "dairy", "bakery", "pantry", "frozen", "household"]),
     })
   ),
@@ -44,7 +46,9 @@ Spell out receipt abbreviations into a plain product name a shopper would recogn
 payment, bag fees, deposits, and anything that isn't a product. Coupon, discount and savings lines are not
 products: add their amount to the discount of the product they apply to (usually the product just above,
 or the one they name). Skip discounts on the whole order, or ones you can't tie to one product. If a line
-shows a weight and a per-lb price, fill pounds. If the image isn't a receipt, set isReceipt to false.`;
+shows a weight and a per-lb price, fill pounds; never guess a weight that isn't printed. A savings total at the
+bottom (like "SALE & PRICE CUT SAVINGS") doesn't tell you which lines were on sale, so don't mark lines from it.
+If the image isn't a receipt, set isReceipt to false.`;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
