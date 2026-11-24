@@ -19,10 +19,12 @@ Build 7 (0.1.0)
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 - Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
 - Open H-E-B and a Kroger store and check that the dates look right.
-- Don't like a meal? On a plan's Meals tab, swipe left on it (or open it) and tap "Don't like". New plans stop suggesting that meal and ones like it. If it was one of your picked meals, a spare idea takes its place.
-- See and undo the meals you don't like in Settings, under Food, "Meals you don't like".
-- Try it: mark a meal you keep getting, make a new plan for the same store, and check it doesn't come back.
-[Needs a Firebase deploy of functions (new dislikeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then "Don't like" shows an error.]
+- Rate your meals, chuckwagon style. On a plan's Meals tab, swipe right on a meal you'd cook again and tap "Keeper" (the star). Swipe left on one you don't like and tap "Leave on the trail". You can also press and hold a meal, or open it and use the buttons under "How was it?".
+- Meals you leave on the trail stop showing up in new plans, along with ones like them. If it was one of your picked meals, a spare idea takes its place.
+- Keepers come first when you tap "Pick saved meals" on the plan screen. Type in the search bar to find any past meal, or turn on "Show all past meals". Meals you left on the trail are hidden there.
+- See and undo both lists in Settings, under Food: "Keepers" and "Left on the trail".
+- Try it: make two meals Keepers, then start a new plan and tap "Pick saved meals". Leave a meal you keep getting on the trail, make a new plan for the same store, and check it doesn't come back.
+[Needs a Firebase deploy of functions (new dislikeMeal and likeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then Keeper and Leave on the trail show an error.]
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [Scan button is on StoresHomeView.]
 [Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]

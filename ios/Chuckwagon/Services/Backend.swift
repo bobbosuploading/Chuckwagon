@@ -37,18 +37,49 @@ enum Backend {
         return doc.get("krogerConnected") as? Bool ?? false
     }
 
-    /// Meals this shopper marked "Don't suggest again" (saved by the backend on their account).
-    static func dislikedMeals() async throws -> [String] {
-        guard let uid = Auth.auth().currentUser?.uid else { return [] }
-        let doc = try await db.collection("users").document(uid).getDocument()
-        return doc.get("dislikedMeals") as? [String] ?? []
+    /// The shopper's rated meals: Keepers (with recipes) and meals left on the trail.
+    struct MealRatingsData {
+        var liked: [MealPlan.Meal]
+        var disliked: [String]
+
+        init(_ data: [String: Any]?) {
+            disliked = data?["dislikedMeals"] as? [String] ?? []
+            let raw = data?["likedMeals"] as? [Any] ?? []
+            liked = raw.compactMap { item in
+                guard JSONSerialization.isValidJSONObject(item),
+                      let json = try? JSONSerialization.data(withJSONObject: item) else { return nil }
+                return try? JSONDecoder().decode(MealPlan.Meal.self, from: json)
+            }
+        }
     }
 
-    /// Adds a meal to the "Don't suggest again" list, or takes it off. Returns the new list.
-    static func setMealDisliked(name: String, disliked: Bool) async throws -> [String] {
+    /// Meals this shopper rated (saved by the backend on their account).
+    static func mealRatings() async throws -> MealRatingsData {
+        guard let uid = Auth.auth().currentUser?.uid else { return MealRatingsData(nil) }
+        let doc = try await db.collection("users").document(uid).getDocument()
+        return MealRatingsData(doc.data())
+    }
+
+    /// Leaves a meal on the trail (disliked), or brings it back. Returns both lists.
+    static func setMealDisliked(name: String, disliked: Bool) async throws -> MealRatingsData {
         let result = try await Functions.functions().httpsCallable("dislikeMeal")
             .call(["name": name, "disliked": disliked])
-        return (result.data as? [String: Any])?["dislikedMeals"] as? [String] ?? []
+        return MealRatingsData(result.data as? [String: Any])
+    }
+
+    /// Makes a meal a Keeper, sending its recipe so it can be picked later, or takes it off. Returns both lists.
+    static func setMealLiked(_ meal: MealPlan.Meal, liked: Bool) async throws -> MealRatingsData {
+        var payload: [String: Any] = ["name": meal.name, "liked": liked]
+        if liked {
+            payload["meal"] = [
+                "servings": meal.servings,
+                "timeMinutes": meal.timeMinutes,
+                "ingredients": meal.ingredients.map { ["item": $0.item, "amount": $0.amount, "onSale": $0.isOnSale] },
+                "steps": meal.steps,
+            ] as [String: Any]
+        }
+        let result = try await Functions.functions().httpsCallable("likeMeal").call(payload)
+        return MealRatingsData(result.data as? [String: Any])
     }
 
     /// Unlocks premium with a tester code.

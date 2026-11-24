@@ -1,4 +1,5 @@
 import { FieldValue, Firestore } from "firebase-admin/firestore";
+import { likedMealsFrom, type MealRatings } from "./likedMeals";
 
 /**
  * Meals a shopper marked "Don't suggest again", kept on users/{uid}.dislikedMeals (newest last).
@@ -34,9 +35,10 @@ export function dislikedMealsText(names: string[]): string {
 /**
  * Adds a meal to the shopper's list (disliked = true) or takes it off (false). Matching is
  * case-insensitive. Adding a meal that's already there moves it to the end, and the oldest
- * drop off past MAX_DISLIKED_MEALS. Returns the new list.
+ * drop off past MAX_DISLIKED_MEALS. Disliking also takes the meal off the Keepers list
+ * (users/{uid}.likedMeals, see likedMeals.ts). Returns both lists.
  */
-export async function saveMealDisliked(db: Firestore, uid: string, name: string, disliked: boolean): Promise<string[]> {
+export async function saveMealDisliked(db: Firestore, uid: string, name: string, disliked: boolean): Promise<MealRatings> {
   const ref = db.collection("users").doc(uid);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -44,7 +46,14 @@ export async function saveMealDisliked(db: Firestore, uid: string, name: string,
     const list = dislikedMealsFrom(snap.get("dislikedMeals")).filter((n) => n.toLowerCase() !== key);
     if (disliked) list.push(name);
     const next = list.slice(-MAX_DISLIKED_MEALS);
-    tx.set(ref, { dislikedMeals: next, dislikedMealsUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    return next;
+    const update: Record<string, unknown> = { dislikedMeals: next, dislikedMealsUpdatedAt: FieldValue.serverTimestamp() };
+    let likedMeals = likedMealsFrom(snap.get("likedMeals"));
+    if (disliked && likedMeals.some((m) => m.name.toLowerCase() === key)) {
+      likedMeals = likedMeals.filter((m) => m.name.toLowerCase() !== key);
+      update.likedMeals = likedMeals;
+      update.likedMealsUpdatedAt = FieldValue.serverTimestamp();
+    }
+    tx.set(ref, update, { merge: true });
+    return { likedMeals, dislikedMeals: next };
   });
 }
