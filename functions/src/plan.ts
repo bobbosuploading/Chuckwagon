@@ -103,6 +103,16 @@ export function themesText(theme: string, nightThemes: string[], included: numbe
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
+/** Takes a leading "1." / "Step 2:" / "3)" off a step, since the app and share page number steps themselves. */
+export function stripStepNumber(step: string): string {
+  return step.replace(/^\s*(?:step\s*)?\d{1,2}\s*[.):-]\s*/i, "").trim();
+}
+
+/** Steps without their own numbers, and without blanks. */
+export function cleanSteps(steps: string[]): string[] {
+  return steps.map(stripStepNumber).filter(Boolean);
+}
+
 export interface IncludeMeal {
   name: string;
   ingredients: { item: string; amount: string }[];
@@ -124,7 +134,7 @@ export function cleanIncludeMeals(raw: unknown, max: number): IncludeMeal[] {
       .filter((i) => i.item)
       .slice(0, 25);
     const steps = list(m.steps)
-      .map((t) => text(t, 300))
+      .map((t) => stripStepNumber(text(t, 300)))
       .filter(Boolean)
       .slice(0, 12);
     meals.push({ name, ingredients, steps });
@@ -221,7 +231,7 @@ Rules:
 - Leave anything under HAVE AT HOME off the grocery list, though meals may use it.
 - Prefer meals that share ingredients so the list stays short and little goes to waste.
 - Size quantities for the household and the number of meals. buyCount is whole packages or units as sold.
-- Keep recipes to the time limit, written as short numbered-step instructions a busy parent can follow.
+- Keep recipes to the time limit, written as short steps a busy parent can follow, one step per entry. Don't number the steps; the app numbers them.
 - If a BUDGET is given, it comes first: the whole grocery list, sale and non-sale items together, must fit under it. To get there, lean on the cheapest proteins per serving (chicken thighs or leg quarters, whole chickens, ground meat, pork shoulder, eggs, beans), stretch meals with rice, pasta, potatoes and tortillas, reuse ingredients across meals, and buy only the packages the meals need. Make fewer meals only as a last resort, and say so in notes.
 - Give every grocery line an estimatedPrice, and when there is a BUDGET keep their sum under its target.
 - Don't state totals, targets or price estimates in notes; the app shows the real totals from store prices.
@@ -719,6 +729,8 @@ ${lines}`;
     const plan = response.parsed_output;
     if (!plan) throw new Error("The model's answer didn't match the plan format");
     plan.meals = plan.meals.slice(0, MAX_TOTAL_MEALS);
+    // The app numbers steps itself, so "1. Cook the rice" would show as "1. 1. Cook the rice".
+    for (const m of plan.meals) m.steps = cleanSteps(m.steps);
     // Picking meals goes by name, so every name must be different.
     const seen = new Set<string>();
     for (const m of plan.meals) {
