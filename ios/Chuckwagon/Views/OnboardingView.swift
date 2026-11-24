@@ -3,6 +3,7 @@ import SwiftUI
 /// Settings. The store list is also on the first screen (StoresHomeView).
 struct PreferencesForm: View {
     @Environment(Preferences.self) private var prefs
+    @Environment(MealRatings.self) private var ratings
     var showsStores: Bool
     @State private var stores: [Store] = []
     @State private var loadError: String?
@@ -76,10 +77,20 @@ struct PreferencesForm: View {
                 }
                 TextField("Allergies (e.g. peanuts, shellfish)", text: $prefs.allergies)
                 TextField("Don't like (e.g. mushrooms, cilantro)", text: $prefs.dislikes)
+                NavigationLink {
+                    RatedMealsView(kind: .liked)
+                } label: {
+                    LabeledContent(MealRatingWords.likedList, value: ratings.liked.isEmpty ? "None" : "\(ratings.liked.count)")
+                }
+                NavigationLink {
+                    RatedMealsView(kind: .disliked)
+                } label: {
+                    LabeledContent(MealRatingWords.dislikedList, value: ratings.disliked.isEmpty ? "None" : "\(ratings.disliked.count)")
+                }
             } header: {
                 Text("Food")
             } footer: {
-                Text("Allergies are never included in any meal.")
+                Text("Allergies are never included in any meal. In a plan, swipe right on a meal to make it a \(MealRatingWords.like), or swipe left to feed it to the dogs so new plans stop suggesting it.")
             }
         }
         .creamBackground()

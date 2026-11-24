@@ -219,6 +219,9 @@ struct MealPlan: Codable, Identifiable, Hashable {
     /// Only when extra meal ideas were asked for: every idea, and which ones are picked.
     /// `meals` and the grocery list cover just the picked ones.
     var options: Options?
+    /// Per-serving nutrition for each meal, by meal name (from USDA data). Added after the
+    /// plan is made (Backend.planMacros), so new and older plans start without it.
+    var mealMacros: [String: MealMacros]?
 
     struct Options: Codable, Hashable {
         /// Every meal idea, the planner's main picks first.
@@ -309,6 +312,31 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var timeMinutes: Int
         var ingredients: [Ingredient]
         var steps: [String]
+    }
+
+    /// One serving's nutrition, worked out from USDA FoodData Central (functions/src/nutrition.ts).
+    struct MealMacros: Codable, Hashable {
+        var perServing: Macros
+        var servings: Int
+        /// Share of the meal's weight we found nutrition for, 0 to 1.
+        var coverage: Double
+
+        struct Macros: Codable, Hashable {
+            var calories: Double
+            var protein: Double
+            var carbs: Double
+            var fat: Double
+            var fiber: Double
+        }
+
+        /// "540 cal · 38g protein · 52g carbs · 18g fat".
+        var summary: String {
+            let p = perServing
+            return "\(Int(p.calories.rounded())) cal · \(Int(p.protein.rounded()))g protein · \(Int(p.carbs.rounded()))g carbs · \(Int(p.fat.rounded()))g fat"
+        }
+
+        /// True when a good part of the meal had no USDA match, so the numbers run low.
+        var isPartial: Bool { coverage < 0.8 }
     }
 
     struct Ingredient: Codable, Hashable {
