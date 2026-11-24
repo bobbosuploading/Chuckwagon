@@ -19,6 +19,10 @@ Build 7 (0.1.0)
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 - Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
 - Open H-E-B and a Kroger store and check that the dates look right.
+- On your grocery list, each item's price is now what you'll pay for the whole line (for example 2 lb of shrimp), so the prices add up to the total. Items we couldn't price say "no price".
+- Recipe steps no longer show two numbers, like "1. 1. Cook the rice".
+- Shared plans (from "Share this plan") now show line prices that add up to the total, say which items have no price, and no longer mention meal ideas you didn't pick. Share a plan and open the link in Messages or Safari to check.
+[Share page and step fixes are in functions (sharePage, planMealsForStore); they reach old links and older builds after a functions deploy.]
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [Scan button is on StoresHomeView.]
 [Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]

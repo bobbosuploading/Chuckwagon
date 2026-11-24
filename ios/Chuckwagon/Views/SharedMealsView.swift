@@ -144,7 +144,10 @@ struct SharedMealsScreen: View {
                         .font(Theme.body(.caption))
                         .foregroundStyle(Theme.ink.opacity(0.6))
                     if let total = shared.totals?.estimatedTotal {
-                        Text("About \(total.dollars) in all when it was shared")
+                        let unpriced = shared.groceryList?.filter { $0.lineTotal == nil }.count ?? 0
+                        Text(unpriced > 0
+                             ? "About \(total.dollars) for the priced items when it was shared. \(unpriced) \(unpriced == 1 ? "item has" : "items have") no price, so the real total is a little more."
+                             : "About \(total.dollars) in all when it was shared")
                             .font(Theme.body(.caption, weight: .bold))
                             .foregroundStyle(Theme.ink.opacity(0.75))
                     }
@@ -166,13 +169,15 @@ struct SharedMealsScreen: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(li.item)
-                                Text(li.quantityNote).font(.caption).foregroundStyle(.secondary)
+                                Text(li.sharedQuantityNote).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if li.onSale, let sale = li.salePrice {
-                                Text(sale.dollars).font(.subheadline.bold())
-                            } else if let total = li.lineTotal {
-                                Text(total.dollars).font(.subheadline).foregroundStyle(Theme.ink.opacity(0.75))
+                            // The line's total, which is what the plan's total adds up.
+                            if let total = li.lineTotal {
+                                Text(total.dollars).font(li.onSale ? .subheadline.bold() : .subheadline)
+                                    .foregroundStyle(li.onSale ? Theme.ink : Theme.ink.opacity(0.75))
+                            } else {
+                                Text("no price").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }

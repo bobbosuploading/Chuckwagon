@@ -175,6 +175,9 @@ struct PlanView: View {
                     Text("About \(total.dollars) total").font(Theme.body(.caption, weight: .bold)).foregroundStyle(.white)
                 }
                 Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
+                if plan.totals.itemsNotPriced > 0 {
+                    Text("\(plan.totals.itemsNotPriced) not priced").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
+                }
             }
         }
         .padding(18)
@@ -245,7 +248,8 @@ struct ListItemRow: View {
                     }
                 }
                 Spacer()
-                if item.onSale, let sale = item.salePrice {
+                if item.onSale, let sale = item.lineTotal ?? item.salePrice {
+                    // The line's total (what the plan's total adds up), not the price per pound or each.
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(sale.dollars).font(.subheadline.bold())
                         if let save = item.lineSavings, save > 0 {
@@ -259,6 +263,8 @@ struct ListItemRow: View {
                         Text(item.priceSource == "estimate" ? "est. price" : item.priceSource == "nearby" ? "nearby price" : "regular")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                } else {
+                    Text("no price").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -343,7 +349,7 @@ struct MealDetailView: View {
                 ForEach(Array(meal.steps.enumerated()), id: \.offset) { i, step in
                     HStack(alignment: .top) {
                         Text("\(i + 1).").bold()
-                        Text(step)
+                        Text(step.withoutStepNumber)
                     }
                 }
             }
