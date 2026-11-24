@@ -8,7 +8,10 @@
  *                 regular price above what was paid, or a sale mark ("SALE", "YOU SAVED").
  *   "ad"          what was paid matches this week's ad price for the item at this store.
  *   "below-usual" what was paid is well under the regular price we already know (the store's
- *                 price book or earlier receipts).
+ *                 price book or earlier receipts). Only when we can tell it's the same package:
+ *                 meat and seafood priced by the pack with no weight printed (a tray of chicken
+ *                 thighs) are never compared this way, and an item with no size on the receipt
+ *                 must be under the cheapest matching package, not just the best name match.
  */
 import { PriceBookItem, words } from "./priceBook";
 
@@ -26,6 +29,8 @@ export interface ReceiptLine {
   regularPrice: number | null;
   /** The receipt marks the line as a sale or price cut. */
   markedSale: boolean;
+  /** Kind of food, if known ("meat", "seafood", ...). */
+  category?: string | null;
 }
 
 /** The bits of an ad deal needed to match a receipt line. */
@@ -123,7 +128,8 @@ export function checkLine(line: ReceiptLine, book: PriceBookItem[], ads: AdPrice
   if (discount > 0.009) return { soldBy, paid, regular: line.regularPrice && line.regularPrice > shelf ? line.regularPrice : shelf, sale: "receipt" };
   if (line.regularPrice && line.regularPrice > paid + 0.009) return { soldBy, paid, regular: line.regularPrice, sale: "receipt" };
 
-  const known = best(line, book.filter((p) => p.soldBy === soldBy && p.price > 0));
+  const pool = book.filter((p) => p.soldBy === soldBy && p.price > 0);
+  const known = best(line, pool);
   const knownRegular = known ? known.price : null;
   if (line.markedSale) return { soldBy, paid, regular: knownRegular && knownRegular > paid ? knownRegular : null, sale: "receipt" };
 
@@ -137,8 +143,30 @@ export function checkLine(line: ReceiptLine, book: PriceBookItem[], ads: AdPrice
     return { soldBy, paid, regular, sale: "ad" };
   }
 
-  // 3. Well under the usual price.
-  if (knownRegular && paid <= knownRegular * BELOW_USUAL) return { soldBy, paid, regular: knownRegular, sale: "below-usual" };
+  // 3. Well under the usual price, when we can tell it's the same package.
+  const usual = comparablePrice(line, byWeight, known, pool);
+  if (usual && paid <= usual * BELOW_USUAL) return { soldBy, paid, regular: usual, sale: "below-usual" };
 
   return { soldBy, paid, regular: paid, sale: null };
+}
+
+/** Meat and seafood packed in trays and priced by the pack, whatever they weigh. */
+const PACKED_BY_WEIGHT = new Set(["meat", "seafood"]);
+
+/**
+ * The everyday price a receipt line can fairly be measured against, or null when we can't
+ * tell it's the same package. A pack of meat with no weight printed (H-E-B prints just
+ * "HEB NAT BNLS SKNLS THIGHS 8.17") could be a 1 lb tray or a 3 lb family pack, so it's
+ * never compared. Any other item with no size on the receipt is compared with the
+ * cheapest package that matches its name, so a smaller package isn't mistaken for a
+ * cut-price big one.
+ */
+function comparablePrice(line: ReceiptLine, byWeight: boolean, known: PriceBookItem | null, pool: PriceBookItem[]): number | null {
+  if (!known) return null;
+  if (byWeight) return known.price;
+  if (normSize(line.size)) return known.price;
+  if (line.category && PACKED_BY_WEIGHT.has(line.category)) return null;
+  let low = known.price;
+  for (const p of pool) if (p.price < low && matchScore(line.name, null, p.name, p.size) > 0) low = p.price;
+  return low;
 }

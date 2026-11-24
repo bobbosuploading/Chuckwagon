@@ -450,6 +450,25 @@ struct SharedMeals: Codable, Hashable {
     var isPlan: Bool { kind == "plan" }
 }
 
+extension SharedMeals.ListItem {
+    /// Older shares can say "3 peppers, minus what Ham bowls needed", naming a meal idea that isn't
+    /// in the share. Same as sharedQuantityNote in functions/src/sharedMeals.ts.
+    var sharedQuantityNote: String {
+        guard let r = quantityNote.range(of: #", minus what .+ needed$"#, options: .regularExpression) else { return quantityNote }
+        if let buyCount, buyCount > 0 { return "buy \(buyCount)" }
+        return String(quantityNote[..<r.lowerBound])
+    }
+}
+
+extension String {
+    /// "1. Cook the rice" -> "Cook the rice". Steps are numbered on screen, and older plans
+    /// sometimes numbered them too. Same as stripStepNumber in functions/src/plan.ts.
+    var withoutStepNumber: String {
+        guard let r = range(of: #"^\s*(?:[Ss]tep\s*)?\d{1,2}\s*[.):-]\s*"#, options: .regularExpression) else { return self }
+        return String(self[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+    }
+}
+
 /// Live progress of a plan being made (Firestore `planProgress/{id}`), so the waiting screen
 /// can show meals as the planner writes them.
 struct PlanProgress: Codable, Hashable {
