@@ -19,6 +19,10 @@ Build 7 (0.1.0)
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 - Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
 - Open H-E-B and a Kroger store and check that the dates look right.
+- Don't like a meal? On a plan's Meals tab, swipe left on it (or open it) and tap "Don't like". New plans stop suggesting that meal and ones like it. If it was one of your picked meals, a spare idea takes its place.
+- See and undo the meals you don't like in Settings, under Food, "Meals you don't like".
+- Try it: mark a meal you keep getting, make a new plan for the same store, and check it doesn't come back.
+[Needs a Firebase deploy of functions (new dislikeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then "Don't like" shows an error.]
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [Scan button is on StoresHomeView.]
 [Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]

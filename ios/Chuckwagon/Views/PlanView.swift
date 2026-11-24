@@ -3,6 +3,7 @@ import SwiftUI
 /// The meal plan: meals on one tab, the checkable grocery list on the other.
 struct PlanView: View {
     @State var plan: MealPlan
+    @Environment(DislikedMeals.self) private var dislikedMeals
     @State private var tab = Tab.list
     /// True while the backend rebuilds the list for a new set of meals.
     @State private var choosing = false
@@ -90,9 +91,12 @@ struct PlanView: View {
                 if let options = plan.options {
                     Section {
                         ForEach(options.meals) { meal in
-                            MealPickRow(meal: meal, planId: plan.id, picked: options.chosen.contains(meal.name), busy: choosing) {
+                            MealPickRow(meal: meal, planId: plan.id, picked: options.chosen.contains(meal.name), busy: choosing,
+                                        disliked: dislikedMeals.contains(meal.name)) {
                                 toggle(meal.name)
                             }
+                            .swipeActions { dislikeButton(meal) }
+                            .contextMenu { dislikeButton(meal) }
                         }
                     } header: {
                         HStack {
@@ -100,15 +104,17 @@ struct PlanView: View {
                             if choosing { Spacer(); ProgressView() }
                         }
                     } footer: {
-                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match.")
+                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match. Swipe left on a meal you don't like so new plans stop suggesting it.")
                     }
                 } else {
                     ForEach(plan.meals) { meal in
                         NavigationLink {
                             MealDetailView(meal: meal, planId: plan.id)
                         } label: {
-                            MealSummary(meal: meal)
+                            MealSummary(meal: meal, disliked: dislikedMeals.contains(meal.name))
                         }
+                        .swipeActions { dislikeButton(meal) }
+                        .contextMenu { dislikeButton(meal) }
                     }
                 }
             }
@@ -135,6 +141,38 @@ struct PlanView: View {
         return "Not feeling a meal? \(spare) more idea\(spare == 1 ? "" : "s") on the Meals tab"
     }
 
+    /// "Don't like" (or "Undo") for a meal: swipe left on it, or press and hold.
+    @ViewBuilder private func dislikeButton(_ meal: MealPlan.Meal) -> some View {
+        if dislikedMeals.contains(meal.name) {
+            Button { setDisliked(meal.name, false) } label: {
+                Label("Suggest again", systemImage: "hand.thumbsup")
+            }
+            .tint(Theme.sage)
+        } else {
+            Button(role: .destructive) { setDisliked(meal.name, true) } label: {
+                Label("Don't like", systemImage: "hand.thumbsdown")
+            }
+        }
+    }
+
+    /// Saves a dislike (or undoes one). A disliked meal that's picked in this plan is swapped
+    /// for a spare idea, or dropped when there's no spare and other meals are left.
+    private func setDisliked(_ name: String, _ disliked: Bool) {
+        Task {
+            if let message = await dislikedMeals.set(name, disliked: disliked) {
+                chooseError = message
+                return
+            }
+            guard disliked, let options = plan.options, options.chosen.contains(name) else { return }
+            var chosen = options.chosen.filter { $0 != name }
+            if let spare = options.meals.first(where: { !options.chosen.contains($0.name) && !dislikedMeals.contains($0.name) }) {
+                chosen.append(spare.name)
+            }
+            guard !chosen.isEmpty else { return }
+            choose(chosen)
+        }
+    }
+
     /// Adds or drops a meal, then shows the list the backend rebuilt for the new picks.
     private func toggle(_ name: String) {
         guard let options = plan.options, !choosing else { return }
@@ -148,8 +186,14 @@ struct PlanView: View {
         } else {
             chosen.append(name)
         }
+        choose(chosen)
+    }
+
+    /// Sends the new picks and shows the list the backend rebuilt for them.
+    private func choose(_ picks: [String]) {
+        guard let options = plan.options, !choosing else { return }
         // Keep the planner's order so the meals don't jump around.
-        chosen = options.meals.map(\.name).filter { chosen.contains($0) }
+        let chosen = options.meals.map(\.name).filter { picks.contains($0) }
         choosing = true
         Task {
             do {
@@ -269,12 +313,19 @@ struct ListItemRow: View {
 /// "Chicken tacos · 30 min · serves 3 · 4 sale items".
 struct MealSummary: View {
     let meal: MealPlan.Meal
+    /// The shopper marked this meal "Don't like", so new plans skip it.
+    var disliked = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
             Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter(\.isOnSale).count) sale items")
                 .font(.caption).foregroundStyle(.secondary)
+            if disliked {
+                Label("You don't like this. New plans skip it.", systemImage: "hand.thumbsdown.fill")
+                    .font(.caption2.bold())
+                    .foregroundStyle(Theme.red)
+            }
         }
     }
 }
@@ -285,6 +336,7 @@ struct MealPickRow: View {
     var planId: String?
     let picked: Bool
     let busy: Bool
+    var disliked = false
     let onToggle: () -> Void
 
     var body: some View {
@@ -300,7 +352,7 @@ struct MealPickRow: View {
             NavigationLink {
                 MealDetailView(meal: meal, planId: planId)
             } label: {
-                MealSummary(meal: meal)
+                MealSummary(meal: meal, disliked: disliked)
                     .opacity(picked ? 1 : 0.6)
             }
         }
@@ -313,6 +365,10 @@ struct MealDetailView: View {
     var planId: String? = nil
     /// For a meal someone shared: the store its sale prices were from.
     var sharedFrom: String? = nil
+    @Environment(DislikedMeals.self) private var dislikedMeals
+    @State private var dislikeError: String?
+
+    private var disliked: Bool { dislikedMeals.contains(meal.name) }
 
     var body: some View {
         List {
@@ -345,6 +401,27 @@ struct MealDetailView: View {
                         Text("\(i + 1).").bold()
                         Text(step)
                     }
+                }
+            }
+            Section {
+                Button {
+                    Task { dislikeError = await dislikedMeals.set(meal.name, disliked: !disliked) }
+                } label: {
+                    HStack {
+                        Label(disliked ? "Suggest this meal again" : "I don't like this meal",
+                              systemImage: disliked ? "hand.thumbsup" : "hand.thumbsdown")
+                        if dislikedMeals.saving == meal.name { Spacer(); ProgressView() }
+                    }
+                }
+                .foregroundStyle(disliked ? Theme.sage : Theme.red)
+                .disabled(dislikedMeals.saving != nil)
+            } footer: {
+                if let dislikeError {
+                    Text(dislikeError).foregroundStyle(Theme.red)
+                } else {
+                    Text(disliked
+                         ? "New plans won't suggest this meal or ones like it."
+                         : "New plans will stop suggesting this meal and ones like it. You can undo this in Settings under Meals you don't like.")
                 }
             }
         }

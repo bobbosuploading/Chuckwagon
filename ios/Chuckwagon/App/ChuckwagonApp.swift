@@ -5,6 +5,7 @@ import FirebaseAppCheck
 @main
 struct ChuckwagonApp: App {
     @State private var prefs = Preferences()
+    @State private var dislikedMeals = DislikedMeals()
 
     init() {
         // App Check proves calls come from the real Chuckwagon app, so nobody can
@@ -17,6 +18,7 @@ struct ChuckwagonApp: App {
         WindowGroup {
             RootView()
                 .environment(prefs)
+                .environment(dislikedMeals)
                 .tint(Theme.red)
                 .preferredColorScheme(.light)
         }
@@ -25,6 +27,7 @@ struct ChuckwagonApp: App {
 
 struct RootView: View {
     @Environment(Preferences.self) private var prefs
+    @Environment(DislikedMeals.self) private var dislikedMeals
     @State private var signInError: String?
     /// A shared meal or plan opened from a link.
     @State private var openedShare: OpenedShare?
@@ -36,6 +39,7 @@ struct RootView: View {
         StoresHomeView()
         .task {
             do { try await Backend.signIn() } catch { signInError = error.localizedDescription }
+            await dislikedMeals.load()
         }
         // Shared meal links: https://chuckwagon-ebbcc.web.app/m/{id} (universal link) or chuckwagon://m/{id}.
         .onOpenURL { openShared($0) }
