@@ -6,6 +6,22 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 8 (0.1.0)
+========================================
+- Rate your meals, chuckwagon style. On a plan's Meals tab, swipe right on a meal you'd cook again and tap "Keeper" (the star). Swipe left on one you don't like and tap "Feed it to the dogs". You can also press and hold a meal, or open it and use the buttons under "How was it?".
+- Meals you feed to the dogs stop showing up in new plans, along with ones like them. If it was one of your picked meals, a spare idea takes its place.
+- Keepers come first when you tap "Pick saved meals" on the plan screen. Type in the search bar to find any past meal, or turn on "Show all past meals". Meals you fed to the dogs are hidden there.
+- See and undo both lists in Settings, under Food: "Keepers" and "Fed to the dogs".
+- Try it: make two meals Keepers, then start a new plan and tap "Pick saved meals". Feed a meal you keep getting to the dogs, make a new plan for the same store, and check it doesn't come back.
+[Needs a Firebase deploy of functions (new dislikeMeal and likeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then Keeper and Feed it to the dogs show an error.]
+- On your grocery list, each item's price is now what you'll pay for the whole line (for example 2 lb of shrimp), so the prices add up to the total. Items we couldn't price say "no price".
+- Recipe steps no longer show two numbers, like "1. 1. Cook the rice".
+- Shared plans (from "Share this plan") now show line prices that add up to the total, say which items have no price, and no longer mention meal ideas you didn't pick. Share a plan and open the link in Messages or Safari to check.
+[Share page and step fixes are in functions (sharePage, planMealsForStore); they reach old links and older builds after a functions deploy.]
+- Meals now show nutrition per serving: calories, protein, carbs and fat. You'll see a short line under each meal, and open a meal for the full list with fiber. It can take a few seconds to show up on a new plan. Check whether the numbers look about right for your meals.
+[Macros come from USDA FoodData Central via addPlanMacros. Needs a functions deploy, plus the USDA_API_KEY repo secret.]
+
+========================================
 Build 7 (0.1.0)
 ========================================
 - There's now a "Scan" button next to "Build a meal plan" at the bottom of the store list. Tap it to scan a receipt or a weekly ad without opening a store first. It starts on your closest starred store, and you can pick any store near you or "Another store".
@@ -18,19 +34,7 @@ Build 7 (0.1.0)
 - Want a theme night? Turn on "Pick a theme for each night" and choose one for each meal, like Mexican for meal 1 and Seafood for meal 3. Leave a night on "Any" to let us choose.
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 - Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
-- Meals now show nutrition per serving: calories, protein, carbs and fat. You'll see a short line under each meal, and open a meal for the full list with fiber. It can take a few seconds to show up on a new plan. Check whether the numbers look about right for your meals.
-[Macros come from USDA FoodData Central via addPlanMacros. Needs a functions deploy, plus the USDA_API_KEY repo secret.]
 - Open H-E-B and a Kroger store and check that the dates look right.
-- Rate your meals, chuckwagon style. On a plan's Meals tab, swipe right on a meal you'd cook again and tap "Keeper" (the star). Swipe left on one you don't like and tap "Feed it to the dogs". You can also press and hold a meal, or open it and use the buttons under "How was it?".
-- Meals you feed to the dogs stop showing up in new plans, along with ones like them. If it was one of your picked meals, a spare idea takes its place.
-- Keepers come first when you tap "Pick saved meals" on the plan screen. Type in the search bar to find any past meal, or turn on "Show all past meals". Meals you fed to the dogs are hidden there.
-- See and undo both lists in Settings, under Food: "Keepers" and "Fed to the dogs".
-- Try it: make two meals Keepers, then start a new plan and tap "Pick saved meals". Feed a meal you keep getting to the dogs, make a new plan for the same store, and check it doesn't come back.
-[Needs a Firebase deploy of functions (new dislikeMeal and likeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then Keeper and Feed it to the dogs show an error.]
-- On your grocery list, each item's price is now what you'll pay for the whole line (for example 2 lb of shrimp), so the prices add up to the total. Items we couldn't price say "no price".
-- Recipe steps no longer show two numbers, like "1. 1. Cook the rice".
-- Shared plans (from "Share this plan") now show line prices that add up to the total, say which items have no price, and no longer mention meal ideas you didn't pick. Share a plan and open the link in Messages or Safari to check.
-[Share page and step fixes are in functions (sharePage, planMealsForStore); they reach old links and older builds after a functions deploy.]
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [Scan button is on StoresHomeView.]
 [Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]
