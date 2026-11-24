@@ -3,6 +3,7 @@ import SwiftUI
 /// The meal plan: meals on one tab, the checkable grocery list on the other.
 struct PlanView: View {
     @State var plan: MealPlan
+    @Environment(MealRatings.self) private var ratings
     @State private var tab = Tab.list
     /// True while the backend rebuilds the list for a new set of meals.
     @State private var choosing = false
@@ -93,6 +94,12 @@ struct PlanView: View {
                             MealPickRow(meal: meal, planId: plan.id, picked: options.chosen.contains(meal.name), busy: choosing) {
                                 toggle(meal.name)
                             }
+                            .swipeActions(edge: .leading) { likeButton(meal) }
+                            .swipeActions(edge: .trailing) { dislikeButton(meal) }
+                            .contextMenu {
+                                likeButton(meal)
+                                dislikeButton(meal)
+                            }
                         }
                     } header: {
                         HStack {
@@ -100,7 +107,7 @@ struct PlanView: View {
                             if choosing { Spacer(); ProgressView() }
                         }
                     } footer: {
-                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match.")
+                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match. Swipe right on a meal you'd cook again to make it a \(MealRatingWords.like), or left to feed it to the dogs so new plans stop suggesting it.")
                     }
                 } else {
                     ForEach(plan.meals) { meal in
@@ -108,6 +115,12 @@ struct PlanView: View {
                             MealDetailView(meal: meal, planId: plan.id)
                         } label: {
                             MealSummary(meal: meal)
+                        }
+                        .swipeActions(edge: .leading) { likeButton(meal) }
+                        .swipeActions(edge: .trailing) { dislikeButton(meal) }
+                        .contextMenu {
+                            likeButton(meal)
+                            dislikeButton(meal)
                         }
                     }
                 }
@@ -148,6 +161,63 @@ struct PlanView: View {
         }
     }
 
+    /// Keeper (or undo) for a meal: swipe right on it, or press and hold.
+    @ViewBuilder private func likeButton(_ meal: MealPlan.Meal) -> some View {
+        if ratings.isLiked(meal.name) {
+            Button { setLiked(meal, false) } label: {
+                Label(MealRatingWords.likeUndo, systemImage: MealRatingWords.likeUndoIcon)
+            }
+            .tint(Theme.ink.opacity(0.5))
+            .accessibilityLabel("Unlike")
+        } else {
+            Button { setLiked(meal, true) } label: {
+                Label(MealRatingWords.like, systemImage: MealRatingWords.likeIcon)
+            }
+            .tint(MealRatingWords.likeColor)
+            .accessibilityLabel("Like")
+        }
+    }
+
+    /// Feed it to the dogs (or bring back) for a meal: swipe left on it, or press and hold.
+    @ViewBuilder private func dislikeButton(_ meal: MealPlan.Meal) -> some View {
+        if ratings.isDisliked(meal.name) {
+            Button { setDisliked(meal.name, false) } label: {
+                Label(MealRatingWords.dislikeUndo, systemImage: MealRatingWords.dislikeUndoIcon)
+            }
+            .tint(Theme.sage)
+            .accessibilityLabel("Undo don't like")
+        } else {
+            Button(role: .destructive) { setDisliked(meal.name, true) } label: {
+                Label(MealRatingWords.dislike, systemImage: MealRatingWords.dislikeIcon)
+            }
+            .accessibilityLabel("Don't like")
+        }
+    }
+
+    private func setLiked(_ meal: MealPlan.Meal, _ liked: Bool) {
+        Task {
+            if let message = await ratings.setLiked(meal, liked) { chooseError = message }
+        }
+    }
+
+    /// Saves a dislike (or undoes one). A disliked meal that's picked in this plan is swapped
+    /// for a spare idea, or dropped when there's no spare and other meals are left.
+    private func setDisliked(_ name: String, _ disliked: Bool) {
+        Task {
+            if let message = await ratings.setDisliked(name, disliked) {
+                chooseError = message
+                return
+            }
+            guard disliked, let options = plan.options, options.chosen.contains(name) else { return }
+            var chosen = options.chosen.filter { $0 != name }
+            if let spare = options.meals.first(where: { !options.chosen.contains($0.name) && !ratings.isDisliked($0.name) }) {
+                chosen.append(spare.name)
+            }
+            guard !chosen.isEmpty else { return }
+            choose(chosen)
+        }
+    }
+
     /// Adds or drops a meal, then shows the list the backend rebuilt for the new picks.
     private func toggle(_ name: String) {
         guard let options = plan.options, !choosing else { return }
@@ -161,8 +231,14 @@ struct PlanView: View {
         } else {
             chosen.append(name)
         }
+        choose(chosen)
+    }
+
+    /// Sends the new picks and shows the list the backend rebuilt for them.
+    private func choose(_ picks: [String]) {
+        guard let options = plan.options, !choosing else { return }
         // Keep the planner's order so the meals don't jump around.
-        chosen = options.meals.map(\.name).filter { chosen.contains($0) }
+        let chosen = options.meals.map(\.name).filter { picks.contains($0) }
         choosing = true
         Task {
             do {
@@ -190,6 +266,9 @@ struct PlanView: View {
                     Text("About \(total.dollars) total").font(Theme.body(.caption, weight: .bold)).foregroundStyle(.white)
                 }
                 Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
+                if plan.totals.itemsNotPriced > 0 {
+                    Text("\(plan.totals.itemsNotPriced) not priced").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
+                }
             }
         }
         .padding(18)
@@ -260,7 +339,8 @@ struct ListItemRow: View {
                     }
                 }
                 Spacer()
-                if item.onSale, let sale = item.salePrice {
+                if item.onSale, let sale = item.lineTotal ?? item.salePrice {
+                    // The line's total (what the plan's total adds up), not the price per pound or each.
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(sale.dollars).font(.subheadline.bold())
                         if let save = item.lineSavings, save > 0 {
@@ -274,6 +354,8 @@ struct ListItemRow: View {
                         Text(item.priceSource == "estimate" ? "est. price" : item.priceSource == "nearby" ? "nearby price" : "regular")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                } else {
+                    Text("no price").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -295,6 +377,7 @@ struct MealSummary: View {
                 Text("\(macros.isPartial ? "About " : "")\(macros.summary) per serving")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+            MealRatingBadge(name: meal.name)
         }
     }
 }
@@ -342,6 +425,28 @@ struct MacrosSection: View {
     }
 }
 
+/// "Keeper" or "Fed to the dogs" under a meal's name, when the shopper rated it.
+struct MealRatingBadge: View {
+    let name: String
+    @Environment(MealRatings.self) private var ratings
+
+    var body: some View {
+        if ratings.isLiked(name) {
+            Label(MealRatingWords.likedBadge, systemImage: MealRatingWords.likeIcon)
+                .font(.caption2.bold())
+                .foregroundStyle(Theme.ink)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(MealRatingWords.likeColor.opacity(0.35), in: Capsule())
+                .accessibilityLabel("Liked")
+        } else if ratings.isDisliked(name) {
+            Label(MealRatingWords.dislikedBadge, systemImage: MealRatingWords.dislikeIcon)
+                .font(.caption2.bold())
+                .foregroundStyle(MealRatingWords.dislikeColor)
+                .accessibilityLabel("You don't like this. New plans skip it.")
+        }
+    }
+}
+
 /// A meal idea with a circle to pick or drop it. The rest of the row opens the recipe.
 struct MealPickRow: View {
     let meal: MealPlan.Meal
@@ -377,6 +482,11 @@ struct MealDetailView: View {
     /// For a meal someone shared: the store its sale prices were from.
     var sharedFrom: String? = nil
     @Environment(\.mealMacros) private var mealMacros
+    @Environment(MealRatings.self) private var ratings
+    @State private var ratingError: String?
+
+    private var liked: Bool { ratings.isLiked(meal.name) }
+    private var disliked: Bool { ratings.isDisliked(meal.name) }
 
     var body: some View {
         List {
@@ -410,8 +520,46 @@ struct MealDetailView: View {
                 ForEach(Array(meal.steps.enumerated()), id: \.offset) { i, step in
                     HStack(alignment: .top) {
                         Text("\(i + 1).").bold()
-                        Text(step)
+                        Text(step.withoutStepNumber)
                     }
+                }
+            }
+            Section {
+                Button {
+                    Task { ratingError = await ratings.setLiked(meal, !liked) }
+                } label: {
+                    HStack {
+                        Label(liked ? "\(MealRatingWords.likeUndo) (remove from \(MealRatingWords.likedList))" : "Make it a \(MealRatingWords.like)",
+                              systemImage: liked ? MealRatingWords.likeUndoIcon : MealRatingWords.likeIcon)
+                            .labelStyle(RatedLabelStyle(color: liked ? Theme.ink.opacity(0.5) : MealRatingWords.likeColor))
+                        if ratings.saving == meal.name && !disliked { Spacer(); ProgressView() }
+                    }
+                }
+                .accessibilityLabel(liked ? "Unlike this meal" : "Like this meal")
+                .disabled(ratings.saving != nil)
+                Button {
+                    Task { ratingError = await ratings.setDisliked(meal.name, !disliked) }
+                } label: {
+                    HStack {
+                        Label(disliked ? MealRatingWords.dislikeUndo : MealRatingWords.dislike,
+                              systemImage: disliked ? MealRatingWords.dislikeUndoIcon : MealRatingWords.dislikeIcon)
+                        if ratings.saving == meal.name && disliked { Spacer(); ProgressView() }
+                    }
+                }
+                .foregroundStyle(disliked ? Theme.sage : MealRatingWords.dislikeColor)
+                .accessibilityLabel(disliked ? "Undo don't like" : "Don't like this meal")
+                .disabled(ratings.saving != nil)
+            } header: {
+                Text("How was it?")
+            } footer: {
+                if let ratingError {
+                    Text(ratingError).foregroundStyle(Theme.red)
+                } else if liked {
+                    Text("\(MealRatingWords.likeHint) See them all in Settings under \(MealRatingWords.likedList).")
+                } else if disliked {
+                    Text("New plans won't suggest this meal or ones like it. Undo it here or in Settings under \(MealRatingWords.dislikedList).")
+                } else {
+                    Text("A \(MealRatingWords.like) shows up first when you pick saved meals for a new plan. Feed it to the dogs and new plans stop suggesting it and ones like it.")
                 }
             }
         }

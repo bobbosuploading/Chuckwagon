@@ -15,6 +15,7 @@ import { StockUp, stockUpTip } from "./stockUp";
 import { MATCH_MODEL, priceRegularItems } from "./priceItems";
 import { liveSharedDeals } from "./sharedDeals";
 import { MealStreamReader, PlanProgress } from "./planProgress";
+import { dislikedMealsFrom, dislikedMealsText } from "./dislikedMeals";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -61,6 +62,11 @@ export interface PlanRequest {
    * skipped.
    */
   nightThemes?: string[];
+  /**
+   * Meals the shopper marked "Don't suggest again" (users/{uid}.dislikedMeals). Filled in by the
+   * backend from the shopper's account, never taken from the app. Cleaned by dislikedMealsFrom.
+   */
+  dislikedMeals?: string[];
 }
 
 /** Longest mood and per-night theme the planner takes. */
@@ -103,6 +109,16 @@ export function themesText(theme: string, nightThemes: string[], included: numbe
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
+/** Takes a leading "1." / "Step 2:" / "3)" off a step, since the app and share page number steps themselves. */
+export function stripStepNumber(step: string): string {
+  return step.replace(/^\s*(?:step\s*)?\d{1,2}\s*[.):-]\s*/i, "").trim();
+}
+
+/** Steps without their own numbers, and without blanks. */
+export function cleanSteps(steps: string[]): string[] {
+  return steps.map(stripStepNumber).filter(Boolean);
+}
+
 export interface IncludeMeal {
   name: string;
   ingredients: { item: string; amount: string }[];
@@ -124,7 +140,7 @@ export function cleanIncludeMeals(raw: unknown, max: number): IncludeMeal[] {
       .filter((i) => i.item)
       .slice(0, 25);
     const steps = list(m.steps)
-      .map((t) => text(t, 300))
+      .map((t) => stripStepNumber(text(t, 300)))
       .filter(Boolean)
       .slice(0, 12);
     meals.push({ name, ingredients, steps });
@@ -221,7 +237,7 @@ Rules:
 - Leave anything under HAVE AT HOME off the grocery list, though meals may use it.
 - Prefer meals that share ingredients so the list stays short and little goes to waste.
 - Size quantities for the household and the number of meals. buyCount is whole packages or units as sold.
-- Keep recipes to the time limit, written as short numbered-step instructions a busy parent can follow.
+- Keep recipes to the time limit, written as short steps a busy parent can follow, one step per entry. Don't number the steps; the app numbers them.
 - If a BUDGET is given, it comes first: the whole grocery list, sale and non-sale items together, must fit under it. To get there, lean on the cheapest proteins per serving (chicken thighs or leg quarters, whole chickens, ground meat, pork shoulder, eggs, beans), stretch meals with rice, pasta, potatoes and tortillas, reuse ingredients across meals, and buy only the packages the meals need. Make fewer meals only as a last resort, and say so in notes.
 - Give every grocery line an estimatedPrice, and when there is a BUDGET keep their sum under its target.
 - Don't state totals, targets or price estimates in notes; the app shows the real totals from store prices.
@@ -586,7 +602,13 @@ export async function planMeals(
   const theme = cleanTheme(req.theme);
   const nightThemes = cleanNightThemes(req.nightThemes, mealCount);
   // Save the cleaned themes with the plan, not what was sent.
-  req = { ...req, theme: theme || undefined, nightThemes: nightThemes.length ? nightThemes : undefined };
+  const dislikedMeals = dislikedMealsFrom(req.dislikedMeals);
+  req = {
+    ...req,
+    theme: theme || undefined,
+    nightThemes: nightThemes.length ? nightThemes : undefined,
+    dislikedMeals: dislikedMeals.length ? dislikedMeals : undefined,
+  };
   const budget =
     req.budget && req.budget >= BUDGET_RANGE.min && req.budget <= BUDGET_RANGE.max ? round2(req.budget) : undefined;
 
@@ -657,7 +679,7 @@ MAX COOK TIME: ${req.maxCookMinutes ?? 45} minutes
 DIET: ${req.diet || "none"}
 ALLERGIES: ${req.allergies || "none"}
 DISLIKES: ${req.dislikes || "none"}
-HAVE AT HOME: ${req.haveAtHome || "salt, pepper, cooking oil, basic spices"}
+${dislikedMealsText(dislikedMeals)}HAVE AT HOME: ${req.haveAtHome || "salt, pepper, cooking oil, basic spices"}
 BUDGET: ${budget ? `$${budget} for the whole list (aim for about $${Math.floor(budget * BUDGET_AIM)} to leave room for price surprises)` : "none"}
 ${themesText(theme, nightThemes, includeMeals.length)}${includeMeals.length ? `\nMEALS TO INCLUDE (${includeMeals.length} of the ${mealCount} main meals):\n${includeMealsText(includeMeals)}\n` : ""}
 SALE ITEMS:
@@ -719,6 +741,8 @@ ${lines}`;
     const plan = response.parsed_output;
     if (!plan) throw new Error("The model's answer didn't match the plan format");
     plan.meals = plan.meals.slice(0, MAX_TOTAL_MEALS);
+    // The app numbers steps itself, so "1. Cook the rice" would show as "1. 1. Cook the rice".
+    for (const m of plan.meals) m.steps = cleanSteps(m.steps);
     // Picking meals goes by name, so every name must be different.
     const seen = new Set<string>();
     for (const m of plan.meals) {

@@ -37,6 +37,51 @@ enum Backend {
         return doc.get("krogerConnected") as? Bool ?? false
     }
 
+    /// The shopper's rated meals: Keepers (with recipes) and meals fed to the dogs.
+    struct MealRatingsData {
+        var liked: [MealPlan.Meal]
+        var disliked: [String]
+
+        init(_ data: [String: Any]?) {
+            disliked = data?["dislikedMeals"] as? [String] ?? []
+            let raw = data?["likedMeals"] as? [Any] ?? []
+            liked = raw.compactMap { item in
+                guard JSONSerialization.isValidJSONObject(item),
+                      let json = try? JSONSerialization.data(withJSONObject: item) else { return nil }
+                return try? JSONDecoder().decode(MealPlan.Meal.self, from: json)
+            }
+        }
+    }
+
+    /// Meals this shopper rated (saved by the backend on their account).
+    static func mealRatings() async throws -> MealRatingsData {
+        guard let uid = Auth.auth().currentUser?.uid else { return MealRatingsData(nil) }
+        let doc = try await db.collection("users").document(uid).getDocument()
+        return MealRatingsData(doc.data())
+    }
+
+    /// Feeds a meal to the dogs (disliked), or brings it back. Returns both lists.
+    static func setMealDisliked(name: String, disliked: Bool) async throws -> MealRatingsData {
+        let result = try await Functions.functions().httpsCallable("dislikeMeal")
+            .call(["name": name, "disliked": disliked])
+        return MealRatingsData(result.data as? [String: Any])
+    }
+
+    /// Makes a meal a Keeper, sending its recipe so it can be picked later, or takes it off. Returns both lists.
+    static func setMealLiked(_ meal: MealPlan.Meal, liked: Bool) async throws -> MealRatingsData {
+        var payload: [String: Any] = ["name": meal.name, "liked": liked]
+        if liked {
+            payload["meal"] = [
+                "servings": meal.servings,
+                "timeMinutes": meal.timeMinutes,
+                "ingredients": meal.ingredients.map { ["item": $0.item, "amount": $0.amount, "onSale": $0.isOnSale] },
+                "steps": meal.steps,
+            ] as [String: Any]
+        }
+        let result = try await Functions.functions().httpsCallable("likeMeal").call(payload)
+        return MealRatingsData(result.data as? [String: Any])
+    }
+
     /// Unlocks premium with a tester code.
     static func redeemCode(_ code: String) async throws {
         _ = try await Functions.functions().httpsCallable("redeemTesterCode").call(["code": code])

@@ -7,6 +7,8 @@ import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import type { PlanProgress } from "./planProgress";
+import { cleanMealName, dislikedMealsFrom, saveMealDisliked } from "./dislikedMeals";
+import { saveMealLiked } from "./likedMeals";
 import { ReceiptError, scanReceipt } from "./receipts";
 import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
 import { deleteDealImages, sweepOldDealImages } from "./dealImages";
@@ -167,7 +169,10 @@ export const planMealsForStore = onCall(
             .catch((err) => logger.warn("Progress write failed", err));
         }
       : undefined;
-    const { progressId: _progressId, ...req } = data;
+    const { progressId: _progressId, ...sent } = data;
+    // Meals the shopper said not to suggest again come from their account, not from the app.
+    const account = await db.collection("users").doc(uid).get();
+    const req: PlanRequest = { ...sent, dislikedMeals: dislikedMealsFrom(account.get("dislikedMeals")) };
     try {
       const plan = await planMeals(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), req, { onProgress });
       const ref = await db.collection("plans").add({ ...plan, uid });
@@ -182,6 +187,39 @@ export const planMealsForStore = onCall(
     }
   }
 );
+
+/**
+ * "Don't suggest again" on a meal, or undo it. Data: { name, disliked: true | false }.
+ * Saves users/{uid}.dislikedMeals (see dislikedMeals.ts), takes the meal off the Keepers, and
+ * returns { dislikedMeals, likedMeals }. No model call; later plans read the list.
+ */
+export const dislikeMeal = onCall(async (request) => {
+  requireApp(request, "dislikeMeal");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const name = cleanMealName(request.data?.name);
+  if (!name) throw new HttpsError("invalid-argument", "Send the meal's name");
+  const disliked = request.data?.disliked !== false;
+  const ratings = await saveMealDisliked(getFirestore(), request.auth.uid, name, disliked);
+  logger.info("Disliked meals changed", { uid: request.auth.uid, disliked, count: ratings.dislikedMeals.length });
+  return ratings;
+});
+
+/**
+ * "Keeper" on a meal, or undo it. Data: { name, liked: true | false, meal?: recipe }.
+ * Saves users/{uid}.likedMeals with the recipe (see likedMeals.ts) so the app's saved-meal
+ * picker can show Keepers first, takes the meal off the disliked list, and returns
+ * { likedMeals, dislikedMeals }. No model call, and plans don't read it.
+ */
+export const likeMeal = onCall(async (request) => {
+  requireApp(request, "likeMeal");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const name = cleanMealName(request.data?.name);
+  if (!name) throw new HttpsError("invalid-argument", "Send the meal's name");
+  const liked = request.data?.liked !== false;
+  const ratings = await saveMealLiked(getFirestore(), request.auth.uid, name, liked, request.data?.meal);
+  logger.info("Liked meals changed", { uid: request.auth.uid, liked, count: ratings.likedMeals.length });
+  return ratings;
+});
 
 /**
  * Picks which meal ideas to cook in a plan made with extraMeals, and rebuilds its grocery
