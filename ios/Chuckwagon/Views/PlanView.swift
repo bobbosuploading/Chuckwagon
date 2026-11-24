@@ -120,6 +120,9 @@ struct PlanView: View {
         .creamBackground()
         // Share the plan (its picked meals and grocery list) by link.
         .mealSharing(planId: plan.id, meal: nil)
+        // Meal rows and recipes read each meal's nutrition from here.
+        .environment(\.mealMacros, plan.mealMacros ?? [:])
+        .task(id: plan.id) { await loadMacros() }
         .onChange(of: plan.groceryList.filter(\.checked).map(\.id)) { _, ids in
             Task { try? await Backend.saveChecked(planId: plan.id, itemIds: ids) }
         }
@@ -133,6 +136,16 @@ struct PlanView: View {
     private func extraIdeasText(_ options: MealPlan.Options) -> String {
         let spare = options.meals.count - plan.meals.count
         return "Not feeling a meal? \(spare) more idea\(spare == 1 ? "" : "s") on the Meals tab"
+    }
+
+    /// Fetches nutrition for meals that don't have it yet. Quietly does nothing if it fails,
+    /// since the plan works fine without it.
+    private func loadMacros() async {
+        let names = (plan.options?.meals ?? plan.meals).map(\.name)
+        guard !names.allSatisfy({ plan.mealMacros?[$0] != nil }) else { return }
+        if let macros = try? await Backend.planMacros(planId: plan.id), !macros.isEmpty {
+            plan.mealMacros = (plan.mealMacros ?? [:]).merging(macros) { _, new in new }
+        }
     }
 
     /// Adds or drops a meal, then shows the list the backend rebuilt for the new picks.
@@ -153,7 +166,9 @@ struct PlanView: View {
         choosing = true
         Task {
             do {
+                let macros = plan.mealMacros
                 plan = try await Backend.chooseMeals(planId: plan.id, meals: chosen)
+                if plan.mealMacros == nil { plan.mealMacros = macros }
             } catch {
                 chooseError = error.localizedDescription
             }
@@ -266,15 +281,63 @@ struct ListItemRow: View {
     }
 }
 
-/// "Chicken tacos · 30 min · serves 3 · 4 sale items".
+/// "Chicken tacos · 30 min · serves 3 · 4 sale items", and its nutrition per serving when known.
 struct MealSummary: View {
     let meal: MealPlan.Meal
+    @Environment(\.mealMacros) private var mealMacros
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
             Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter(\.isOnSale).count) sale items")
                 .font(.caption).foregroundStyle(.secondary)
+            if let macros = mealMacros[meal.name] {
+                Text("\(macros.isPartial ? "About " : "")\(macros.summary) per serving")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Each meal's nutrition by meal name, set by PlanView for the meal rows and recipes under it.
+private struct MealMacrosKey: EnvironmentKey {
+    static let defaultValue: [String: MealPlan.MealMacros] = [:]
+}
+
+extension EnvironmentValues {
+    var mealMacros: [String: MealPlan.MealMacros] {
+        get { self[MealMacrosKey.self] }
+        set { self[MealMacrosKey.self] = newValue }
+    }
+}
+
+/// "Nutrition per serving" in a recipe: calories, protein, carbs, fat and fiber.
+struct MacrosSection: View {
+    let macros: MealPlan.MealMacros
+
+    var body: some View {
+        Section {
+            row("Calories", "\(Int(macros.perServing.calories.rounded()))")
+            row("Protein", grams(macros.perServing.protein))
+            row("Carbs", grams(macros.perServing.carbs))
+            row("Fat", grams(macros.perServing.fat))
+            row("Fiber", grams(macros.perServing.fiber))
+        } header: {
+            Text("Nutrition per serving")
+        } footer: {
+            Text(macros.isPartial
+                 ? "Estimated from USDA data. Some ingredients weren't found, so the real numbers are likely a bit higher."
+                 : "Estimated from USDA data for the ingredients and amounts in this recipe.")
+        }
+    }
+
+    private func grams(_ g: Double) -> String { "\(Int(g.rounded())) g" }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value).monospacedDigit().foregroundStyle(.secondary)
         }
     }
 }
@@ -313,6 +376,7 @@ struct MealDetailView: View {
     var planId: String? = nil
     /// For a meal someone shared: the store its sale prices were from.
     var sharedFrom: String? = nil
+    @Environment(\.mealMacros) private var mealMacros
 
     var body: some View {
         List {
@@ -323,6 +387,9 @@ struct MealDetailView: View {
                 if let sharedFrom {
                     Text("Shared with you from Chuckwagon. Items marked ON SALE were on sale at \(sharedFrom) that week.")
                 }
+            }
+            if let macros = mealMacros[meal.name] {
+                MacrosSection(macros: macros)
             }
             Section("Ingredients") {
                 ForEach(meal.ingredients, id: \.self) { ing in
