@@ -7,6 +7,7 @@ import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
 import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import type { PlanProgress } from "./planProgress";
+import { cleanMealName, dislikedMealsFrom, saveMealDisliked } from "./dislikedMeals";
 import { ReceiptError, scanReceipt } from "./receipts";
 import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
 import { deleteDealImages, sweepOldDealImages } from "./dealImages";
@@ -167,7 +168,10 @@ export const planMealsForStore = onCall(
             .catch((err) => logger.warn("Progress write failed", err));
         }
       : undefined;
-    const { progressId: _progressId, ...req } = data;
+    const { progressId: _progressId, ...sent } = data;
+    // Meals the shopper said not to suggest again come from their account, not from the app.
+    const account = await db.collection("users").doc(uid).get();
+    const req: PlanRequest = { ...sent, dislikedMeals: dislikedMealsFrom(account.get("dislikedMeals")) };
     try {
       const plan = await planMeals(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), req, { onProgress });
       const ref = await db.collection("plans").add({ ...plan, uid });
@@ -182,6 +186,22 @@ export const planMealsForStore = onCall(
     }
   }
 );
+
+/**
+ * "Don't suggest again" on a meal, or undo it. Data: { name, disliked: true | false }.
+ * Saves users/{uid}.dislikedMeals (see dislikedMeals.ts) and returns { dislikedMeals }.
+ * No model call; later plans read the list.
+ */
+export const dislikeMeal = onCall(async (request) => {
+  requireApp(request, "dislikeMeal");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const name = cleanMealName(request.data?.name);
+  if (!name) throw new HttpsError("invalid-argument", "Send the meal's name");
+  const disliked = request.data?.disliked !== false;
+  const dislikedMeals = await saveMealDisliked(getFirestore(), request.auth.uid, name, disliked);
+  logger.info("Disliked meals changed", { uid: request.auth.uid, disliked, count: dislikedMeals.length });
+  return { dislikedMeals };
+});
 
 /**
  * Picks which meal ideas to cook in a plan made with extraMeals, and rebuilds its grocery

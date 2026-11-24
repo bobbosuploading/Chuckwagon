@@ -3,6 +3,7 @@ import SwiftUI
 /// Settings. The store list is also on the first screen (StoresHomeView).
 struct PreferencesForm: View {
     @Environment(Preferences.self) private var prefs
+    @Environment(DislikedMeals.self) private var dislikedMeals
     var showsStores: Bool
     @State private var stores: [Store] = []
     @State private var loadError: String?
@@ -76,10 +77,15 @@ struct PreferencesForm: View {
                 }
                 TextField("Allergies (e.g. peanuts, shellfish)", text: $prefs.allergies)
                 TextField("Don't like (e.g. mushrooms, cilantro)", text: $prefs.dislikes)
+                NavigationLink {
+                    DislikedMealsView()
+                } label: {
+                    LabeledContent("Meals you don't like", value: dislikedMeals.names.isEmpty ? "None" : "\(dislikedMeals.names.count)")
+                }
             } header: {
                 Text("Food")
             } footer: {
-                Text("Allergies are never included in any meal.")
+                Text("Allergies are never included in any meal. To stop seeing a meal, swipe left on it in a plan and tap Don't like.")
             }
         }
         .creamBackground()

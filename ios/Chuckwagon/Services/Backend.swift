@@ -37,6 +37,20 @@ enum Backend {
         return doc.get("krogerConnected") as? Bool ?? false
     }
 
+    /// Meals this shopper marked "Don't suggest again" (saved by the backend on their account).
+    static func dislikedMeals() async throws -> [String] {
+        guard let uid = Auth.auth().currentUser?.uid else { return [] }
+        let doc = try await db.collection("users").document(uid).getDocument()
+        return doc.get("dislikedMeals") as? [String] ?? []
+    }
+
+    /// Adds a meal to the "Don't suggest again" list, or takes it off. Returns the new list.
+    static func setMealDisliked(name: String, disliked: Bool) async throws -> [String] {
+        let result = try await Functions.functions().httpsCallable("dislikeMeal")
+            .call(["name": name, "disliked": disliked])
+        return (result.data as? [String: Any])?["dislikedMeals"] as? [String] ?? []
+    }
+
     /// Unlocks premium with a tester code.
     static func redeemCode(_ code: String) async throws {
         _ = try await Functions.functions().httpsCallable("redeemTesterCode").call(["code": code])
