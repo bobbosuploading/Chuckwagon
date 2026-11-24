@@ -107,7 +107,7 @@ struct PlanView: View {
                             if choosing { Spacer(); ProgressView() }
                         }
                     } footer: {
-                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match. Swipe right on a meal you'd cook again to make it a \(MealRatingWords.like), or left to leave it on the trail so new plans stop suggesting it.")
+                        Text("Tap a circle to add or drop a meal. The grocery list and total change to match. Swipe right on a meal you'd cook again to make it a \(MealRatingWords.like), or left to feed it to the dogs so new plans stop suggesting it.")
                     }
                 } else {
                     ForEach(plan.meals) { meal in
@@ -165,7 +165,7 @@ struct PlanView: View {
         }
     }
 
-    /// Leave on the trail (or bring back) for a meal: swipe left on it, or press and hold.
+    /// Feed it to the dogs (or bring back) for a meal: swipe left on it, or press and hold.
     @ViewBuilder private func dislikeButton(_ meal: MealPlan.Meal) -> some View {
         if ratings.isDisliked(meal.name) {
             Button { setDisliked(meal.name, false) } label: {
@@ -356,7 +356,7 @@ struct MealSummary: View {
     }
 }
 
-/// "Keeper" or "Left on the trail" under a meal's name, when the shopper rated it.
+/// "Keeper" or "Fed to the dogs" under a meal's name, when the shopper rated it.
 struct MealRatingBadge: View {
     let name: String
     @Environment(MealRatings.self) private var ratings
@@ -486,7 +486,7 @@ struct MealDetailView: View {
                 } else if disliked {
                     Text("New plans won't suggest this meal or ones like it. Undo it here or in Settings under \(MealRatingWords.dislikedList).")
                 } else {
-                    Text("A \(MealRatingWords.like) shows up first when you pick saved meals for a new plan. Leave it on the trail and new plans stop suggesting it and ones like it.")
+                    Text("A \(MealRatingWords.like) shows up first when you pick saved meals for a new plan. Feed it to the dogs and new plans stop suggesting it and ones like it.")
                 }
             }
         }

@@ -90,7 +90,7 @@ struct PreferencesForm: View {
             } header: {
                 Text("Food")
             } footer: {
-                Text("Allergies are never included in any meal. In a plan, swipe right on a meal to make it a \(MealRatingWords.like), or swipe left to leave it on the trail so new plans stop suggesting it.")
+                Text("Allergies are never included in any meal. In a plan, swipe right on a meal to make it a \(MealRatingWords.like), or swipe left to feed it to the dogs so new plans stop suggesting it.")
             }
         }
         .creamBackground()

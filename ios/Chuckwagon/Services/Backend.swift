@@ -37,7 +37,7 @@ enum Backend {
         return doc.get("krogerConnected") as? Bool ?? false
     }
 
-    /// The shopper's rated meals: Keepers (with recipes) and meals left on the trail.
+    /// The shopper's rated meals: Keepers (with recipes) and meals fed to the dogs.
     struct MealRatingsData {
         var liked: [MealPlan.Meal]
         var disliked: [String]
@@ -60,7 +60,7 @@ enum Backend {
         return MealRatingsData(doc.data())
     }
 
-    /// Leaves a meal on the trail (disliked), or brings it back. Returns both lists.
+    /// Feeds a meal to the dogs (disliked), or brings it back. Returns both lists.
     static func setMealDisliked(name: String, disliked: Bool) async throws -> MealRatingsData {
         let result = try await Functions.functions().httpsCallable("dislikeMeal")
             .call(["name": name, "disliked": disliked])

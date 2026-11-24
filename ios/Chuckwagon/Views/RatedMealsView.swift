@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings > Keepers, or Settings > Left on the trail: every meal on that list, newest first,
+/// Settings > Keepers, or Settings > Fed to the dogs: every meal on that list, newest first,
 /// with a way to take each off.
 struct RatedMealsView: View {
     enum Kind { case liked, disliked }
@@ -66,7 +66,7 @@ struct RatedMealsView: View {
     private var emptyText: String {
         kind == .liked
             ? "No keepers yet. In a plan, swipe right on a meal you'd cook again (or open it) and tap \(W.like). Keepers show up first when you pick saved meals for a new plan."
-            : "Nothing left on the trail. In a plan, swipe left on a meal you don't like (or open it) and tap \(W.dislike), and new plans will stop suggesting it."
+            : "Nothing fed to the dogs yet. In a plan, swipe left on a meal you don't like (or open it) and tap \(W.dislike), and new plans will stop suggesting it."
     }
 
     private var footerText: String {

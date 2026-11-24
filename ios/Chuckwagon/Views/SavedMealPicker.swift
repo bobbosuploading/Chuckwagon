@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Picks saved meals to build a new plan around. Opens from "Meals to include" on the plan screen.
 /// Keepers (meals the shopper liked) come first. Past meals (from the shopper's plans and meals
-/// shared with them) show when searching or after "Show all past meals". Meals left on the trail
+/// shared with them) show when searching or after "Show all past meals". Meals fed to the dogs
 /// (disliked) never show.
 struct SavedMealPicker: View {
     @Binding var selection: [MealPlan.Meal]
@@ -27,7 +27,7 @@ struct SavedMealPicker: View {
     /// Keepers, newest first.
     private var keepers: [MealPlan.Meal] { ratings.liked.reversed() }
 
-    /// A past meal that isn't a Keeper (those are listed above) and wasn't left on the trail.
+    /// A past meal that isn't a Keeper (those are listed above) and wasn't fed to the dogs.
     private func isPlainPast(_ meal: MealPlan.Meal) -> Bool {
         !ratings.isLiked(meal.name) && !ratings.isDisliked(meal.name)
     }
@@ -121,7 +121,7 @@ struct SavedMealPicker: View {
     }
 
     private var pastFooter: String? {
-        hiddenCount > 0 ? "\(hiddenCount) meal\(hiddenCount == 1 ? "" : "s") you left on the trail \(hiddenCount == 1 ? "is" : "are") hidden." : nil
+        hiddenCount > 0 ? "\(hiddenCount) meal\(hiddenCount == 1 ? "" : "s") you fed to the dogs \(hiddenCount == 1 ? "is" : "are") hidden." : nil
     }
 
     @ViewBuilder private func mealSection(_ title: String, _ meals: [MealPlan.Meal], footer: String? = nil) -> some View {

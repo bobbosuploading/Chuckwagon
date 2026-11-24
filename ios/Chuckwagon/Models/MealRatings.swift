@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The words and icons for liking and disliking meals, in one place so they're easy to change.
 /// A nod to the old chuckwagon: a meal worth cooking again is a "Keeper" (a sheriff's star),
-/// and one you're done with gets "left on the trail". Screen readers hear plain Like / Don't like.
+/// and one you're done with gets "fed to the dogs". Screen readers hear plain Like / Don't like.
 enum MealRatingWords {
     static let like = "Keeper"
     static let likeIcon = "star.fill"
@@ -12,12 +12,12 @@ enum MealRatingWords {
     static let likedBadge = "Keeper"
     static let likeHint = "Keepers show up first when you pick saved meals for a new plan."
 
-    static let dislike = "Leave on the trail"
-    static let dislikeIcon = "hand.thumbsdown"
+    static let dislike = "Feed it to the dogs"
+    static let dislikeIcon = "dog"
     static let dislikeUndo = "Bring it back"
     static let dislikeUndoIcon = "arrow.uturn.backward"
-    static let dislikedList = "Left on the trail"
-    static let dislikedBadge = "Left on the trail. New plans skip it."
+    static let dislikedList = "Fed to the dogs"
+    static let dislikedBadge = "Fed to the dogs. New plans skip it."
     static let dislikeHint = "New plans stop suggesting this meal and ones like it."
 
     static let likeColor = Theme.mustard
@@ -25,7 +25,7 @@ enum MealRatingWords {
 }
 
 /// Meals the shopper rated: Keepers (liked, saved with their recipes so the saved-meal picker
-/// can show them first) and meals left on the trail (disliked, so new plans skip them). Both live
+/// can show them first) and meals fed to the dogs (disliked, so new plans skip them). Both live
 /// on the shopper's account (users/{uid}.likedMeals and .dislikedMeals, written only by the
 /// backend). A meal is never on both lists. Shared app-wide through the environment.
 @MainActor
