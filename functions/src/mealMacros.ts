@@ -36,6 +36,10 @@ const BLOOM_FIREBASE_PROJECT_ID = defineString("BLOOM_FIREBASE_PROJECT_ID", { de
 const MACRO_LIMITS = { perUserPerDay: 20, allUsersPerDay: 600 };
 /** Bloom only reads saved data (plus the occasional macros fill-in), so this is just a safety net. */
 const BLOOM_LIMITS = { perUserPerDay: 200 };
+/** How long bloomMeals waits for macros fill-ins before answering. Bloom's request times out at 20 s. */
+const FILL_BUDGET_MS = 8_000;
+/** Plans this server is already working out macros for, so a retry doesn't start the same work again. */
+const fillsInFlight = new Set<string>();
 
 function today(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -194,22 +198,30 @@ export const bloomMeals = onRequest(
       .limit(20)
       .get();
 
+    // Fill in macros for a couple of plans that don't have them yet, so older plans show up with
+    // numbers. Working them out takes 10-30 seconds a plan, and Bloom gives up after 20, so wait at
+    // most FILL_BUDGET_MS. Anything not done in time is sent as "Nutrition coming soon" and keeps
+    // going on the server, so the numbers are there next time.
+    const toFill = plans.docs.filter((d) => !hasAllMacros(d.data()) && !fillsInFlight.has(d.id)).slice(0, 2);
+    const filledMacros = new Map<string, Record<string, MealMacros>>();
+    const fills = toFill.map((d) => {
+      fillsInFlight.add(d.id);
+      return fillMacros(db, d.id, d.data())
+        .then((m) => { filledMacros.set(d.id, m); })
+        .catch((err) => logger.warn("Macros fill-in for Bloom failed", { planId: d.id, err: (err as Error).message }))
+        .finally(() => fillsInFlight.delete(d.id));
+    });
+    if (fills.length) {
+      await Promise.race([Promise.all(fills), new Promise((r) => setTimeout(r, FILL_BUDGET_MS))]);
+    }
+
     const meals: BloomMeal[] = [];
     const seen = new Set<string>();
-    let filled = 0;
     for (const doc of plans.docs) {
       const plan = doc.data();
-      let macros = (plan.mealMacros ?? {}) as Record<string, MealMacros>;
-      // Fill in a couple of plans that don't have macros yet, so older plans show up with numbers.
-      if (!hasAllMacros(plan) && filled < 2) {
-        filled++;
-        try {
-          macros = await fillMacros(db, doc.id, plan);
-        } catch (err) {
-          logger.warn("Macros fill-in for Bloom failed", { planId: doc.id, err: (err as Error).message });
-        }
-      }
+      const macros = filledMacros.get(doc.id) ?? ((plan.mealMacros ?? {}) as Record<string, MealMacros>);
       for (const m of (plan.meals ?? []) as { name: string; servings: number; timeMinutes?: number; ingredients?: { item: string; amount: string }[] }[]) {
+        if (!m?.name) continue;
         const key = m.name.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -230,7 +242,7 @@ export const bloomMeals = onRequest(
       }
       if (meals.length >= limit) break;
     }
-    logger.info("Bloom meals", { uid, plans: plans.size, meals: meals.length, filled });
+    logger.info("Bloom meals", { uid, plans: plans.size, meals: meals.length, filling: toFill.length, filled: filledMacros.size });
     res.json({ linked: true, meals });
   }
 );
