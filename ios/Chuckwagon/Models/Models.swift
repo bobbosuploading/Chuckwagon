@@ -219,6 +219,9 @@ struct MealPlan: Codable, Identifiable, Hashable {
     /// Only when extra meal ideas were asked for: every idea, and which ones are picked.
     /// `meals` and the grocery list cover just the picked ones.
     var options: Options?
+    /// Per-serving nutrition for each meal, by meal name (from USDA data). Added after the
+    /// plan is made (Backend.planMacros), so new and older plans start without it.
+    var mealMacros: [String: MealMacros]?
 
     struct Options: Codable, Hashable {
         /// Every meal idea, the planner's main picks first.
@@ -244,6 +247,8 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var items: Int
         var saleItems: Double
         var savings: Double
+        /// Estimated savings on sale items whose ad printed no regular price. Older plans don't have it.
+        var savingsEstimate: Double?
         /// Set when this store uses a nearby store's prices.
         var pricesNote: String?
     }
@@ -255,6 +260,43 @@ struct MealPlan: Codable, Identifiable, Hashable {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.date(from: createdAt)
+    }
+
+    /// What the plan's savings line says. Ads that don't print regular prices leave sale items
+    /// with no savings, so "You save $0.00" would be wrong.
+    struct SavingsSummary {
+        /// "YOU SAVE", "YOU SAVE ABOUT", "YOU SAVE AT LEAST" or "ON SALE".
+        var label: String
+        var amount: Double
+        /// A short "save $X" / "save about $X" for lists, or "on sale $X".
+        var short: String
+        /// Set when the number needs explaining.
+        var note: String?
+        /// True when the headline is the sale total, not savings.
+        var showsSaleTotal: Bool { label == "ON SALE" }
+    }
+
+    var savingsSummary: SavingsSummary {
+        let known = totals.savings
+        let estimate = totals.savingsEstimate ?? 0
+        let saleLines = groceryList.filter(\.onSale)
+        // Older plans don't count these, so work it out from the list.
+        let missing = totals.saleItemsNoSavings
+            ?? saleLines.filter { $0.lineSavings == nil && $0.lineSavingsEstimate == nil }.count
+        if estimate > 0 {
+            let total = known + estimate
+            return SavingsSummary(label: "YOU SAVE ABOUT", amount: total, short: "save about \(total.dollars)",
+                                  note: "Some regular prices are estimates")
+        }
+        if known <= 0, !saleLines.isEmpty, missing > 0 {
+            return SavingsSummary(label: "ON SALE", amount: totals.saleItems, short: "on sale \(totals.saleItems.dollars)",
+                                  note: "The ad didn't list regular prices")
+        }
+        if missing > 0 {
+            return SavingsSummary(label: "YOU SAVE AT LEAST", amount: known, short: "save \(known.dollars)+",
+                                  note: "Some ads didn't list regular prices")
+        }
+        return SavingsSummary(label: "YOU SAVE", amount: known, short: "save \(known.dollars)", note: nil)
     }
 
     /// Copies saved check marks onto the grocery list.
@@ -270,6 +312,31 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var timeMinutes: Int
         var ingredients: [Ingredient]
         var steps: [String]
+    }
+
+    /// One serving's nutrition, worked out from USDA FoodData Central (functions/src/nutrition.ts).
+    struct MealMacros: Codable, Hashable {
+        var perServing: Macros
+        var servings: Int
+        /// Share of the meal's weight we found nutrition for, 0 to 1.
+        var coverage: Double
+
+        struct Macros: Codable, Hashable {
+            var calories: Double
+            var protein: Double
+            var carbs: Double
+            var fat: Double
+            var fiber: Double
+        }
+
+        /// "540 cal · 38g protein · 52g carbs · 18g fat".
+        var summary: String {
+            let p = perServing
+            return "\(Int(p.calories.rounded())) cal · \(Int(p.protein.rounded()))g protein · \(Int(p.carbs.rounded()))g carbs · \(Int(p.fat.rounded()))g fat"
+        }
+
+        /// True when a good part of the meal had no USDA match, so the numbers run low.
+        var isPartial: Bool { coverage < 0.8 }
     }
 
     struct Ingredient: Codable, Hashable {
@@ -294,6 +361,9 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var regularPrice: Double?
         var lineTotal: Double?
         var lineSavings: Double?
+        /// Sale items whose ad printed no regular price: savings estimated from an everyday
+        /// price (often Kroger's). Older plans don't have it.
+        var lineSavingsEstimate: Double?
         var forMeals: [String]
         /// Which store to buy it at (multi-store plans). Older plans don't have it.
         var storeName: String?
@@ -310,13 +380,18 @@ struct MealPlan: Codable, Identifiable, Hashable {
 
         enum CodingKeys: String, CodingKey {
             case aisle, item, buyCount, quantityNote, dealId, onSale, salePrice
-            case regularPrice, lineTotal, lineSavings, forMeals, storeName, priceSource, pricedAs, stockUp, storeId
+            case regularPrice, lineTotal, lineSavings, lineSavingsEstimate, forMeals, storeName, priceSource, pricedAs, stockUp, storeId
         }
     }
 
     struct Totals: Codable, Hashable {
         var saleItems: Double
+        /// Savings from regular prices the stores printed.
         var savings: Double
+        /// Extra savings estimated from everyday prices. Older plans don't have it.
+        var savingsEstimate: Double?
+        /// Sale items with no known or estimated savings. Older plans don't have it.
+        var saleItemsNoSavings: Int?
         var itemsNotPriced: Int
         /// Items not on sale at everyday prices. Older plans don't have it.
         var regularItems: Double?
@@ -401,6 +476,25 @@ struct SharedMeals: Codable, Hashable {
     }
 
     var isPlan: Bool { kind == "plan" }
+}
+
+extension SharedMeals.ListItem {
+    /// Older shares can say "3 peppers, minus what Ham bowls needed", naming a meal idea that isn't
+    /// in the share. Same as sharedQuantityNote in functions/src/sharedMeals.ts.
+    var sharedQuantityNote: String {
+        guard let r = quantityNote.range(of: #", minus what .+ needed$"#, options: .regularExpression) else { return quantityNote }
+        if let buyCount, buyCount > 0 { return "buy \(buyCount)" }
+        return String(quantityNote[..<r.lowerBound])
+    }
+}
+
+extension String {
+    /// "1. Cook the rice" -> "Cook the rice". Steps are numbered on screen, and older plans
+    /// sometimes numbered them too. Same as stripStepNumber in functions/src/plan.ts.
+    var withoutStepNumber: String {
+        guard let r = range(of: #"^\s*(?:[Ss]tep\s*)?\d{1,2}\s*[.):-]\s*"#, options: .regularExpression) else { return self }
+        return String(self[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+    }
 }
 
 /// Live progress of a plan being made (Firestore `planProgress/{id}`), so the waiting screen

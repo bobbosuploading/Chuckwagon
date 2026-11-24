@@ -9,7 +9,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { FieldValue, Firestore } from "firebase-admin/firestore";
-import type { MealPlan, PricedListItem } from "./plan";
+import { cleanSteps, type MealPlan, type PricedListItem } from "./plan";
 
 /** Where shared links point. Firebase Hosting's free address for the project. */
 export const SHARE_HOST = "chuckwagon-ebbcc.web.app";
@@ -74,15 +74,24 @@ function copyMeal(m: MealPlan["meals"][number]): SharedMeal {
     servings: m.servings,
     timeMinutes: m.timeMinutes,
     ingredients: m.ingredients.map((i) => ({ item: i.item, amount: i.amount, onSale: !!i.dealId })),
-    steps: m.steps,
+    steps: cleanSteps(m.steps),
   };
+}
+
+/**
+ * A plan's list notes can name meal ideas the sender didn't pick ("3 peppers, minus what Ham
+ * bowls needed"). Those meals aren't in the share, so say how many to buy instead.
+ */
+export function sharedQuantityNote(note: string, buyCount: number | null | undefined): string {
+  if (!/, minus what .+ needed$/.test(note)) return note;
+  return buyCount ? `buy ${buyCount}` : note.replace(/, minus what .+ needed$/, "");
 }
 
 function copyListItem(li: PricedListItem): SharedListItem {
   return {
     aisle: li.aisle,
     item: li.item,
-    quantityNote: li.quantityNote,
+    quantityNote: sharedQuantityNote(li.quantityNote, li.buyCount),
     buyCount: li.buyCount,
     onSale: li.onSale,
     salePrice: li.salePrice ?? null,
@@ -166,17 +175,29 @@ export function sharePageHtml(id: string, shared: SharedMeals | null): string {
   <h3>Ingredients</h3>
   <ul>${m.ingredients.map((i) => `<li>${esc(i.amount)} ${esc(i.item)}${i.onSale ? ' <span class="tag">ON SALE</span>' : ""}</li>`).join("")}</ul>
   <h3>Steps</h3>
-  <ol>${m.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+  <ol>${cleanSteps(m.steps).map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
 </section>`
     )
     .join("\n");
+  // Each line shows what it costs in all (the total adds these up), not the sale price per pound or each.
+  const unpriced = shared?.groceryList?.filter((li) => typeof li.lineTotal !== "number").length ?? 0;
+  const totalNote = shared?.totals?.estimatedTotal
+    ? unpriced
+      ? `About ${money(shared.totals.estimatedTotal)} for the priced items when it was shared. ${unpriced} ${unpriced === 1 ? "item has" : "items have"} no price, so the real total is a little more.`
+      : `About ${money(shared.totals.estimatedTotal)} in all when it was shared.`
+    : "";
   const list = shared?.groceryList?.length
     ? `<section class="card">
   <h2>Grocery list</h2>
   <ul class="list">${shared.groceryList
-    .map((li) => `<li><span>${esc(li.item)} <small>${esc(li.quantityNote)}</small></span><span>${li.onSale ? money(li.salePrice) : money(li.lineTotal)}</span></li>`)
+    .map(
+      (li) =>
+        `<li><span>${esc(li.item)} <small>${esc(sharedQuantityNote(li.quantityNote, li.buyCount))}</small>${li.onSale ? ' <span class="tag">ON SALE</span>' : ""}</span>${
+          typeof li.lineTotal === "number" ? `<span>${money(li.lineTotal)}</span>` : '<span class="noprice">no price</span>'
+        }</li>`
+    )
     .join("")}</ul>
-  ${shared.totals?.estimatedTotal ? `<p class="meta">About ${money(shared.totals.estimatedTotal)} in all when it was shared.</p>` : ""}
+  ${totalNote ? `<p class="meta">${esc(totalNote)}</p>` : ""}
 </section>`
     : "";
   const saleNote = shared ? `<p class="meta">Sale prices were at ${esc(shared.storeName)} that week.</p>` : "";
@@ -211,6 +232,7 @@ export function sharePageHtml(id: string, shared: SharedMeals | null): string {
   .list { list-style: none; padding: 0; }
   .list li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid #eee; }
   small { opacity: .6; }
+  .noprice { opacity: .5; font-size: 14px; white-space: nowrap; }
 </style>
 </head>
 <body>

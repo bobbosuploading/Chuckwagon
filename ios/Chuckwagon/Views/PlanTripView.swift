@@ -182,7 +182,7 @@ struct PlanTripView: View {
             Text("Meals to include")
         } footer: {
             Text(included.isEmpty
-                 ? "Optional. Pick meals you've liked before and we'll plan the rest around them, buying their ingredients on sale where we can."
+                 ? "Optional. Pick your \(MealRatingWords.likedList) or any past meal and we'll plan the rest around them, buying their ingredients on sale where we can."
                  : "\(included.count) of your \(prefs.mealCount) meals. We'll buy their ingredients on sale where we can and plan the other \(prefs.mealCount - included.count) around them.")
         }
     }

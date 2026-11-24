@@ -39,6 +39,9 @@ jobs:
             echo "INSTACART_API_URL=$INSTACART_API_URL"
             echo "APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE:-true}"
             if [ -n "$APPLE_TEAM_ID" ]; then echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"; fi
+            echo "USDA_API_KEY=${USDA_API_KEY:-DEMO_KEY}"
+            # Always write these: non-interactive deploys fail on an unset param even when the code has a default.
+            echo "BLOOM_FIREBASE_PROJECT_ID=${BLOOM_FIREBASE_PROJECT_ID:-bloom-circle-3f6b8}"
           } > .env
           echo "App Check enforcement: ${APP_CHECK_ENFORCE:-true}"
         env:
@@ -50,6 +53,10 @@ jobs:
           APP_CHECK_ENFORCE: ${{ vars.APP_CHECK_ENFORCE }}
           # Repo variable: the Apple Team ID, so shared meal links open the app (universal links).
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          # Repo secret: free USDA FoodData Central key (api.data.gov) for meal nutrition. Unset = DEMO_KEY (testing only).
+          USDA_API_KEY: ${{ secrets.USDA_API_KEY }}
+          # Repo variable (optional): Bloom Circle's Firebase project id for bloomMeals. Unset = bloom-circle-3f6b8; "off" turns it off.
+          BLOOM_FIREBASE_PROJECT_ID: ${{ vars.BLOOM_FIREBASE_PROJECT_ID }}
       - name: Deploy
         run: npx --yes firebase-tools@14 deploy --project chuckwagon-ebbcc --only "${{ inputs.what }}" --non-interactive --force
         env:
