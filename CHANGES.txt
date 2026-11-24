@@ -6,6 +6,14 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 9 (0.1.0)
+========================================
+- When a meal plan can't be made, you now see why in a message right away. Before, the "Rustling up supper" screen flashed and you were sent back to the form with no explanation (the reason was hidden at the very bottom of the form). The reason also stays at the top of the form after you tap OK.
+- Fixed: "Plan my meals" could flash "Rustling up supper" and stop with "Couldn't reach Chuckwagon", even though your plan was still being made (it showed up later in My plans). Now the app keeps waiting and opens the plan when it's ready. Build a few plans, with and without Chef's pick, and check that each one opens.
+- "Couldn't reach Chuckwagon" messages now end with a short code in brackets, like "(network -1004)" or "(server unavailable)". If you see one, send us a screenshot.
+- Tap "Plan my meals" a few times in one day, with and without Chef's pick, and check that the message makes sense when you hit a limit.
+
+========================================
 Build 8 (0.1.0)
 ========================================
 - Plans no longer say "You save $0.00" when a weekly ad doesn't print regular prices (Brookshire Brothers' ad, for example). We now estimate the regular price from everyday prices, so the plan says "You save about $X", and items show "save ~$X est.". If we can't find a price to compare, the plan shows "On sale $X" and says the ad didn't list regular prices. Scan a Brookshire ad, build a plan, and check that the savings look reasonable.
@@ -21,10 +29,6 @@ Build 8 (0.1.0)
 - See and undo both lists in Settings, under Food: "Keepers" and "Fed to the dogs".
 - Try it: make two meals Keepers, then start a new plan and tap "Pick saved meals". Feed a meal you keep getting to the dogs, make a new plan for the same store, and check it doesn't come back.
 [Needs a Firebase deploy of functions (new dislikeMeal and likeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then Keeper and Feed it to the dogs show an error.]
-- When a meal plan can't be made, you now see why in a message right away. Before, the "Rustling up supper" screen flashed and you were sent back to the form with no explanation (the reason was hidden at the very bottom of the form). The reason also stays at the top of the form after you tap OK.
-- Fixed: "Plan my meals" could flash "Rustling up supper" and stop with "Couldn't reach Chuckwagon", even though your plan was still being made (it showed up later in My plans). Now the app keeps waiting and opens the plan when it's ready. Build a few plans, with and without Chef's pick, and check that each one opens.
-- "Couldn't reach Chuckwagon" messages now end with a short code in brackets, like "(network -1004)" or "(server unavailable)". If you see one, send us a screenshot.
-- Tap "Plan my meals" a few times in one day, with and without Chef's pick, and check that the message makes sense when you hit a limit.
 
 ========================================
 Build 7 (0.1.0)
