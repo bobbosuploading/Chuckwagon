@@ -175,9 +175,12 @@ enum Backend {
         let started = Date.now
         do {
             return try decodePlan(try await callable.call(payload).data)
-        } catch where isTimeout(error) || isConnectionLost(error) {
+        } catch where isTimeout(error) || isConnectionLost(error) || isRequestDropped(error) {
             // The plan may still finish and be saved on the server. Look for it before giving up.
-            if let plan = try? await findPlan(madeAfter: started, waitingUntil: started.addingTimeInterval(600)) {
+            // The search runs in its own task so that whatever stopped the call (a cancelled
+            // request, say) doesn't stop the search too.
+            let found = try? await Task { try await findPlan(madeAfter: started, waitingUntil: started.addingTimeInterval(600)) }.value
+            if let plan = found ?? nil {
                 return plan
             }
             throw error
@@ -475,6 +478,17 @@ enum Backend {
     }
 
     /// True when the request likely never reached the server (no signal, connection dropped).
+    /// The phone stopped waiting for some other network reason (for example the request was
+    /// cancelled, error -999) while the server may still be making the plan. On Nov 18, 2026 the
+    /// app showed "Couldn't reach Chuckwagon" within a second while the server went on to save
+    /// every one of those plans.
+    private static func isRequestDropped(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == FunctionsErrorDomain, FunctionsErrorCode(rawValue: error.code) == .cancelled { return true }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError, isRequestDropped(underlying) { return true }
+        return error.domain == NSURLErrorDomain || error is CancellationError
+    }
+
     private static func isConnectionLost(_ error: Error) -> Bool {
         let error = error as NSError
         if error.domain == FunctionsErrorDomain, FunctionsErrorCode(rawValue: error.code) == .unavailable { return true }
@@ -497,14 +511,15 @@ enum Backend {
         let nsError = error as NSError
         let slowMessage = planning ? slowPlanMessage : slowMessage
         if nsError.domain == NSURLErrorDomain {
-            return nsError.code == NSURLErrorTimedOut ? slowMessage : offlineMessage
+            // The code (for example "network -1004") tells us which network problem it was.
+            return nsError.code == NSURLErrorTimedOut ? slowMessage : offlineMessage + " (network \(nsError.code))"
         }
         guard nsError.domain == FunctionsErrorDomain, let code = FunctionsErrorCode(rawValue: nsError.code) else {
             return error.localizedDescription
         }
         switch code {
         case .deadlineExceeded: return slowMessage
-        case .unavailable: return offlineMessage
+        case .unavailable: return offlineMessage + " (server unavailable)"
         case .unauthenticated: return "You're signed out. Close the app, open it again and try once more."
         case .internal, .unknown, .dataLoss:
             // Older functions sent raw error text here; only show it when it reads like ours.

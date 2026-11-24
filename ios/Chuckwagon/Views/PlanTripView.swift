@@ -27,6 +27,7 @@ struct PlanTripView: View {
     /// What the planner has done so far, while planning.
     @State private var progress: PlanProgress?
     @State private var error: String?
+    @State private var showError = false
 
     private var nearby: [Store] { prefs.nearbyClosestFirst(stores) }
 
@@ -56,6 +57,12 @@ struct PlanTripView: View {
             }
         }
         .onAppear(perform: pickDefaults)
+        // A plan that fails says why right away, not just in the form.
+        .alert("Couldn't make your plan", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(error ?? "")
+        }
     }
 
     /// Starts with the store it was opened from, else the stores used last time, else the
@@ -79,6 +86,10 @@ struct PlanTripView: View {
     private var form: some View {
         @Bindable var prefs = prefs
         return Form {
+            // At the top, because the form comes back scrolled to the top after a failed plan.
+            if let error {
+                Section { Text(error).foregroundStyle(.red) }
+            }
             storesSection
             Section {
                 Stepper("Meals: \(prefs.mealCount)", value: $prefs.mealCount, in: max(1, included.count)...7)
@@ -130,9 +141,6 @@ struct PlanTripView: View {
             }
             Section {
                 Toggle("Chef's pick (premium meals)", isOn: $premium)
-            }
-            if let error {
-                Section { Text(error).foregroundStyle(.red) }
             }
         }
         .creamBackground()
@@ -253,6 +261,7 @@ struct PlanTripView: View {
                                               onProgress: { progress = $0 })
         } catch {
             self.error = Backend.friendlyMessage(for: error, planning: true)
+            showError = true
         }
     }
 }
