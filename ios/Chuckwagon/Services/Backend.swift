@@ -234,6 +234,15 @@ enum Backend {
         }
     }
 
+    /// Per-serving macros for a plan's meals, by meal name. The backend works them out the
+    /// first time (a few seconds) and saves them on the plan, so later calls are quick.
+    static func planMacros(planId: String) async throws -> [String: MealPlan.MealMacros] {
+        let result = try await Functions.functions().httpsCallable("addPlanMacros").call(["planId": planId])
+        guard let dict = result.data as? [String: Any], let macros = dict["mealMacros"] else { return [:] }
+        let data = try JSONSerialization.data(withJSONObject: macros)
+        return try JSONDecoder().decode([String: MealPlan.MealMacros].self, from: data)
+    }
+
     /// Saves which grocery items are checked off.
     static func saveChecked(planId: String, itemIds: [String]) async throws {
         try await db.collection("plans").document(planId).updateData(["checked": itemIds])

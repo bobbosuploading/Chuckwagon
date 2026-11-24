@@ -18,6 +18,8 @@ Build 7 (0.1.0)
 - Want a theme night? Turn on "Pick a theme for each night" and choose one for each meal, like Mexican for meal 1 and Seafood for meal 3. Leave a night on "Any" to let us choose.
 - Try a seafood night with a budget turned on, and try "International" to get a different cuisine each night. If the sales don't fit a theme well, the plan's note tells you.
 - Each store's deals now say when the prices are good, right above the deals. Stores with a weekly ad (like H-E-B and ALDI) show "Sale prices good through" the ad's last day. Kroger, which doesn't give end dates, shows when we last checked its prices, like "Prices checked today".
+- Meals now show nutrition per serving: calories, protein, carbs and fat. You'll see a short line under each meal, and open a meal for the full list with fiber. It can take a few seconds to show up on a new plan. Check whether the numbers look about right for your meals.
+[Macros come from USDA FoodData Central via addPlanMacros. Needs a functions deploy, plus the USDA_API_KEY repo secret.]
 - Open H-E-B and a Kroger store and check that the dates look right.
 - Rate your meals, chuckwagon style. On a plan's Meals tab, swipe right on a meal you'd cook again and tap "Keeper" (the star). Swipe left on one you don't like and tap "Feed it to the dogs". You can also press and hold a meal, or open it and use the buttons under "How was it?".
 - Meals you feed to the dogs stop showing up in new plans, along with ones like them. If it was one of your picked meals, a spare idea takes its place.
