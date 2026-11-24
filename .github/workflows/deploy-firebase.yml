@@ -54,7 +54,7 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           # Repo secret: free USDA FoodData Central key (api.data.gov) for meal nutrition. Unset = DEMO_KEY (testing only).
           USDA_API_KEY: ${{ secrets.USDA_API_KEY }}
-          # Repo variable: Bloom Circle's Firebase project id, so Bloom can read meals (bloomMeals). Unset = off.
+          # Repo variable (optional): Bloom Circle's Firebase project id for bloomMeals. Unset = bloom-circle-3f6b8; "off" turns it off.
           BLOOM_FIREBASE_PROJECT_ID: ${{ vars.BLOOM_FIREBASE_PROJECT_ID }}
       - name: Deploy
         run: npx --yes firebase-tools@14 deploy --project chuckwagon-ebbcc --only "${{ inputs.what }}" --non-interactive --force

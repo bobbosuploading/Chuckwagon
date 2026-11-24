@@ -24,8 +24,13 @@ import { computeMealMacros, hasAllMacros, MealMacros, planMeals } from "./nutrit
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 /** Free key from https://api.data.gov/signup (1,000 lookups an hour). DEMO_KEY works for a quick test only. */
 const USDA_API_KEY = defineString("USDA_API_KEY", { default: "DEMO_KEY" });
-/** Bloom Circle's Firebase project id. Empty turns bloomMeals off. */
-const BLOOM_FIREBASE_PROJECT_ID = defineString("BLOOM_FIREBASE_PROJECT_ID", { default: "" });
+/**
+ * Bloom Circle's Firebase project id (not a secret). Override with the BLOOM_FIREBASE_PROJECT_ID
+ * repo variable; set it to "off" to turn bloomMeals off.
+ * Bloom users start anonymous and link Apple later, so sign_in_provider can still say "anonymous";
+ * the Apple id is read from firebase.identities["apple.com"] instead, which linking adds.
+ */
+const BLOOM_FIREBASE_PROJECT_ID = defineString("BLOOM_FIREBASE_PROJECT_ID", { default: "bloom-circle-3f6b8" });
 
 /** Working out macros costs a fraction of a cent (two small Haiku calls); foods are cached for everyone. */
 const MACRO_LIMITS = { perUserPerDay: 20, allUsersPerDay: 600 };
@@ -129,7 +134,8 @@ export const bloomMeals = onRequest(
       res.status(405).json({ error: "method_not_allowed" });
       return;
     }
-    if (!BLOOM_FIREBASE_PROJECT_ID.value()) {
+    const bloomProject = BLOOM_FIREBASE_PROJECT_ID.value();
+    if (!bloomProject || bloomProject === "off") {
       res.status(503).json({ error: "not_configured" });
       return;
     }
