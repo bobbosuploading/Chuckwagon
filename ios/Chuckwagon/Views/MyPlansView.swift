@@ -99,7 +99,7 @@ private struct PlanRow: View {
                     .font(Theme.title(17))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Text("save \(plan.totals.savings.dollars)")
+                Text(plan.savingsSummary.short)
                     .font(Theme.body(.caption, weight: .bold))
                     .foregroundStyle(Theme.red)
             }

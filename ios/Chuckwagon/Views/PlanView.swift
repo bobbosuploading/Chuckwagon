@@ -38,7 +38,9 @@ struct PlanView: View {
                         Image(systemName: "storefront.fill").foregroundStyle(Theme.red)
                         Text(s.storeName).font(Theme.body(.subheadline, weight: .semibold))
                         Spacer()
-                        Text("\(s.items) items · save \(s.savings.dollars)")
+                        Text((s.savingsEstimate ?? 0) > 0
+                             ? "\(s.items) items · save about \((s.savings + (s.savingsEstimate ?? 0)).dollars)"
+                             : "\(s.items) items · save \(s.savings.dollars)")
                             .font(Theme.body(.caption))
                             .foregroundStyle(Theme.ink.opacity(0.6))
                     }
@@ -253,11 +255,15 @@ struct PlanView: View {
     }
 
     private var savingsHeader: some View {
-        HStack {
+        let summary = plan.savingsSummary
+        return HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("YOU SAVE").font(.system(size: 12, weight: .heavy, design: .rounded)).tracking(1.2)
+                Text(summary.label).font(.system(size: 12, weight: .heavy, design: .rounded)).tracking(1.2)
                     .foregroundStyle(.white.opacity(0.85))
-                Text(plan.totals.savings.dollars).font(Theme.title(34)).foregroundStyle(.white)
+                Text(summary.amount.dollars).font(Theme.title(34)).foregroundStyle(.white)
+                if let note = summary.note {
+                    Text(note).font(Theme.body(.caption2)).foregroundStyle(.white.opacity(0.85))
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -265,7 +271,9 @@ struct PlanView: View {
                 if let total = plan.totals.estimatedTotal, total > plan.totals.saleItems {
                     Text("About \(total.dollars) total").font(Theme.body(.caption, weight: .bold)).foregroundStyle(.white)
                 }
-                Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
+                if !summary.showsSaleTotal {
+                    Text("Sale items \(plan.totals.saleItems.dollars)").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
+                }
                 if plan.totals.itemsNotPriced > 0 {
                     Text("\(plan.totals.itemsNotPriced) not priced").font(Theme.body(.caption)).foregroundStyle(.white.opacity(0.85))
                 }
@@ -345,6 +353,8 @@ struct ListItemRow: View {
                         Text(sale.dollars).font(.subheadline.bold())
                         if let save = item.lineSavings, save > 0 {
                             Text("save \(save.dollars)").font(.caption2.bold()).foregroundStyle(Color.chuckRed)
+                        } else if let save = item.lineSavingsEstimate, save > 0 {
+                            Text("save ~\(save.dollars) est.").font(.caption2.bold()).foregroundStyle(Color.chuckRed.opacity(0.8))
                         }
                     }
                 } else if let total = item.lineTotal {

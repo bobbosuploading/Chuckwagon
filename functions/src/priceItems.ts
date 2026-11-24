@@ -25,6 +25,8 @@ export interface ItemPrice {
   size: string | null;
   /** Price per package, or per lb when perLb. */
   unitPrice: number;
+  /** The everyday price, ignoring any promo the price book has. */
+  regularUnitPrice: number;
   perLb: boolean;
   /** Packages to buy, or pounds when perLb. */
   quantity: number;
@@ -133,6 +135,7 @@ export async function priceRegularItems(
       product: p.name,
       size: p.size,
       unitPrice,
+      regularUnitPrice: p.price,
       perLb,
       quantity,
       lineTotal: round2(unitPrice * quantity),
