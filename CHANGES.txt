@@ -25,6 +25,10 @@ Build 7 (0.1.0)
 - See and undo both lists in Settings, under Food: "Keepers" and "Fed to the dogs".
 - Try it: make two meals Keepers, then start a new plan and tap "Pick saved meals". Feed a meal you keep getting to the dogs, make a new plan for the same store, and check it doesn't come back.
 [Needs a Firebase deploy of functions (new dislikeMeal and likeMeal; planMealsForStore reads users/{uid}.dislikedMeals). Until then Keeper and Feed it to the dogs show an error.]
+- On your grocery list, each item's price is now what you'll pay for the whole line (for example 2 lb of shrimp), so the prices add up to the total. Items we couldn't price say "no price".
+- Recipe steps no longer show two numbers, like "1. 1. Cook the rice".
+- Shared plans (from "Share this plan") now show line prices that add up to the total, say which items have no price, and no longer mention meal ideas you didn't pick. Share a plan and open the link in Messages or Safari to check.
+[Share page and step fixes are in functions (sharePage, planMealsForStore); they reach old links and older builds after a functions deploy.]
 [Needs a Firebase deploy of functions (planMealsForStore reads theme and nightThemes). Until then the app's themes are ignored.]
 [Scan button is on StoresHomeView.]
 [Pictures need Firebase Storage turned on (production mode) and a functions deploy (scanAdPhoto, new cleanEndedAdScans). They work for older builds too, since the app already shows any picture a deal has.]
