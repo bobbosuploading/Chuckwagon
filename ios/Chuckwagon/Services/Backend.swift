@@ -41,9 +41,13 @@ enum Backend {
     struct MealRatingsData {
         var liked: [MealPlan.Meal]
         var disliked: [String]
+        /// The shopper's own notes on meals, oldest first. Nil when the data didn't include them
+        /// (the like/dislike calls return only the two lists).
+        var notes: [MealNote]?
 
         init(_ data: [String: Any]?) {
             disliked = data?["dislikedMeals"] as? [String] ?? []
+            notes = data?["mealNotes"] != nil ? MealNote.list(from: data?["mealNotes"]) : nil
             let raw = data?["likedMeals"] as? [Any] ?? []
             liked = raw.compactMap { item in
                 guard JSONSerialization.isValidJSONObject(item),
@@ -80,6 +84,13 @@ enum Backend {
         }
         let result = try await Functions.functions().httpsCallable("likeMeal").call(payload)
         return MealRatingsData(result.data as? [String: Any])
+    }
+
+    /// Saves the shopper's own note on a meal, or deletes it when the note is empty. Returns every note.
+    static func saveMealNote(name: String, note: String) async throws -> [MealNote] {
+        let result = try await Functions.functions().httpsCallable("saveMealNote")
+            .call(["name": name, "note": note])
+        return MealNote.list(from: (result.data as? [String: Any])?["mealNotes"])
     }
 
     /// Unlocks premium with a tester code.

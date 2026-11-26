@@ -9,6 +9,7 @@ import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
 import type { PlanProgress } from "./planProgress";
 import { cleanMealName, dislikedMealsFrom, saveMealDisliked } from "./dislikedMeals";
 import { saveMealLiked } from "./likedMeals";
+import { cleanNote, mealNotesFrom, saveMealNote as storeMealNote } from "./mealNotes";
 import { ReceiptError, scanReceipt } from "./receipts";
 import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
 import { deleteDealImages, sweepOldDealImages } from "./dealImages";
@@ -170,9 +171,14 @@ export const planMealsForStore = onCall(
         }
       : undefined;
     const { progressId: _progressId, ...sent } = data;
-    // Meals the shopper said not to suggest again come from their account, not from the app.
+    // Meals the shopper said not to suggest again, and their own notes on meals, come from their
+    // account, not from the app.
     const account = await db.collection("users").doc(uid).get();
-    const req: PlanRequest = { ...sent, dislikedMeals: dislikedMealsFrom(account.get("dislikedMeals")) };
+    const req: PlanRequest = {
+      ...sent,
+      dislikedMeals: dislikedMealsFrom(account.get("dislikedMeals")),
+      mealNotes: mealNotesFrom(account.get("mealNotes")),
+    };
     try {
       const plan = await planMeals(db, new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }), req, { onProgress });
       const ref = await db.collection("plans").add({ ...plan, uid });
@@ -219,6 +225,22 @@ export const likeMeal = onCall(async (request) => {
   const ratings = await saveMealLiked(getFirestore(), request.auth.uid, name, liked, request.data?.meal);
   logger.info("Liked meals changed", { uid: request.auth.uid, liked, count: ratings.likedMeals.length });
   return ratings;
+});
+
+/**
+ * The shopper's own note on a meal ("used twice the garlic"), or an empty note to delete it.
+ * Data: { name, note }. Saves users/{uid}.mealNotes (see mealNotes.ts) and returns { mealNotes }.
+ * No model call; later plans read the newest few.
+ */
+export const saveMealNote = onCall(async (request) => {
+  requireApp(request, "saveMealNote");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const name = cleanMealName(request.data?.name);
+  if (!name) throw new HttpsError("invalid-argument", "Send the meal's name");
+  const note = cleanNote(request.data?.note);
+  const mealNotes = await storeMealNote(getFirestore(), request.auth.uid, name, note);
+  logger.info("Meal notes changed", { uid: request.auth.uid, deleted: !note, count: mealNotes.length });
+  return { mealNotes };
 });
 
 /**
