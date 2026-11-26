@@ -8,7 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "9"
+    CURRENT_PROJECT_VERSION: "10"
     # Signing team for every target, so regenerating with XcodeGen keeps it.
     DEVELOPMENT_TEAM: R86HM48T2Z
     CODE_SIGN_STYLE: Automatic
@@ -40,6 +40,8 @@ targetTemplates:
         product: FirebaseFunctions
       - package: Firebase
         product: FirebaseAppCheck
+      - package: Firebase
+        product: FirebaseMessaging
 
 targets:
   # The real app: TestFlight and the App Store. Archive this one.
@@ -58,6 +60,9 @@ targets:
         com.apple.developer.associated-domains: ["applinks:chuckwagon-ebbcc.web.app"]
         # App Check: TestFlight and App Store builds always use production App Attest.
         com.apple.developer.devicecheck.appattest-environment: production
+        # Push notifications (deals alerts, planning reminder). Signing switches this to
+        # production for TestFlight and App Store builds.
+        aps-environment: development
     dependencies:
       - target: ChuckwagonShare
     settings:

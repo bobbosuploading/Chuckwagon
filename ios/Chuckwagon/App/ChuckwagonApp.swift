@@ -4,10 +4,17 @@ import FirebaseAppCheck
 
 @main
 struct ChuckwagonApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var prefs = Preferences()
     @State private var mealRatings = MealRatings()
 
     init() {
+        Self.configureFirebase()
+    }
+
+    /// Safe to call more than once (the app and its AppDelegate both do, whichever runs first).
+    static func configureFirebase() {
+        guard FirebaseApp.app() == nil else { return }
         // App Check proves calls come from the real Chuckwagon app, so nobody can
         // use the backend (and its AI credits) from a script. Must run before configure().
         AppCheck.setAppCheckProviderFactory(ChuckwagonAppCheckFactory())
@@ -34,12 +41,25 @@ struct RootView: View {
 
     struct OpenedShare: Identifiable { let id: String }
 
+    /// Changes that the backend needs to know about for notifications.
+    private var notifySettings: String {
+        "\(prefs.notifyNewDeals)|\(prefs.planReminderDay)|\(prefs.planReminderHour)|\(prefs.favoriteStoreIds)"
+    }
+
     var body: some View {
         // Everyone lands on the stores near them. A new shopper sets their area right there.
         StoresHomeView()
         .task {
             do { try await Backend.signIn() } catch { signInError = error.localizedDescription }
             await mealRatings.load()
+            await PushNotifications.registerIfWanted(prefs)
+        }
+        // Each launch Firebase hands over the push token again; send it so the backend has a working one.
+        .onReceive(NotificationCenter.default.publisher(for: .pushTokenChanged)) { _ in
+            Task { await PushNotifications.sync(prefs, force: true) }
+        }
+        .onChange(of: notifySettings) {
+            Task { await PushNotifications.sync(prefs) }
         }
         // Shared meal links: https://chuckwagon-ebbcc.web.app/m/{id} (universal link) or chuckwagon://m/{id}.
         .onOpenURL { openShared($0) }
