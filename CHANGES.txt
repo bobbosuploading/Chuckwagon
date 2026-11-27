@@ -14,6 +14,15 @@ Build 10 (0.1.0)
 - See, edit or delete all your notes in Settings, under Food: "Cook's notes".
 - Try it: add a note to a meal, make it a Keeper, then start a new plan, tap "Pick saved meals", pick that meal, and check the new recipe follows your note.
 [Needs a functions deploy (new saveMealNote callable; planMealsForStore reads users/{uid}.mealNotes and adds up to 12 notes to the prompt only when there are any).]
+- Notifications, if you want them. In Settings, under Notifications, you can turn on "New deals at my stores" to hear when a new weekly ad is in at your starred stores (or the three closest, if you haven't starred any). You can also pick a day and time for a weekly "time to plan this week's suppers" reminder.
+- Both are off until you turn them on, and you'll get at most one deals alert and one reminder a week. iPhone asks once if Chuckwagon may send notifications.
+- Try it: turn one on, tap "Send a test notification", and check it shows up. Set the reminder for later today and check it comes at that hour. Deals alerts come the next time a store's weekly ad loads, during the day.
+[Needs the Apple push key uploaded in the Firebase console (Project settings > Cloud Messaging) and a deploy of firestore and functions (saveNotificationSettings, sendTestNotification, hourly sendNotifications, new deals index on storeId + validTo).]
+- Sale alerts. In Settings, under Notifications, tap "Sale alerts" to pick cuts to watch (pork belly, brisket, ribs, pork butt, chuck roast and more) or type in anything of your own, like toilet paper. You'll hear when one goes on a big sale compared with its usual price.
+- Make it yourself: switch on homemade bacon, ground beef or beef jerky, and we'll tell you when a cut on sale makes it cheaper to make your own than to buy it, after trim and drying. Ground beef checks chuck, brisket, sirloin and round and picks the cheapest.
+- You choose how big a saving is worth an alert (30% to start). We check once a day and send at most one sale alert every 6 days.
+- Try it: switch on a few cuts and the make-it-yourself checks, then tap "See what's on sale now" to see what this week's ads would send you.
+[Sale alerts need a functions deploy (checkSaleWatch callable; sendNotifications runs a daily watch check and writes watchPrices/{storeId}). Kroger price books gain 14 meat and jerky searches, about 14 more API calls per store per run. H-E-B usual prices improve as watchPrices history builds.]
 - New shopping list you can share with your household. Tap the checklist button at the top of the store list. Type anything you need, like milk or paper towels, and tap the circle to check it off.
 - On a meal plan's grocery list, tap "Add to shopping list" to put the plan's items on it. Items already on the list aren't added twice.
 - To share it, sign in with Apple, then tap "Share this list" at the bottom and send the link to your spouse or family. Once they join, you both see one list. Anything either of you adds or checks off shows up on both phones within a second or two.

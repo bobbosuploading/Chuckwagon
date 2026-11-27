@@ -15,6 +15,7 @@ import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
 import { deleteDealImages, sweepOldDealImages } from "./dealImages";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
+export { checkSaleWatch, saveNotificationSettings, sendNotifications, sendTestNotification } from "./notifications";
 import { appSiteAssociation, invitePageHtml, MealShareError, SHARE_HOST, SHARE_ID, shareMeals, SharedMeals, sharePageHtml } from "./sharedMeals";
 import {
   cleanMemberName,
