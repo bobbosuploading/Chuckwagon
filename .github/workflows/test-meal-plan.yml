@@ -41,6 +41,29 @@ on:
       night_themes:
         description: "Theme per meal, separated by ; with blanks for any (e.g. Mexican;;Seafood) (optional)"
         default: ""
+      use_up:
+        description: "Food at home to use up, separated by ; (e.g. 2 lb chicken thighs;half bag spinach) (optional)"
+        default: ""
+      on_hand:
+        description: "Other food on hand, separated by ; (optional)"
+        default: ""
+      trip:
+        description: "Store trip"
+        type: choice
+        options: [full, minimal, none]
+        default: full
+      cheapest:
+        description: "Cheapest possible meals"
+        type: boolean
+        default: false
+      long_cooks:
+        description: "Long cooks (0 to 2)"
+        default: "0"
+      long_cook_how:
+        description: "How long cooks are cooked"
+        type: choice
+        options: [any, smoker, slow cooker]
+        default: any
       variants:
         description: "Compare thinking efforts, comma-separated: medium, low, high (blank = the app's setting only)"
         default: ""
@@ -83,3 +106,9 @@ jobs:
           INCLUDE_MEALS: ${{ inputs.include_meals }}
           THEME: ${{ inputs.theme }}
           NIGHT_THEMES: ${{ inputs.night_themes }}
+          USE_UP: ${{ inputs.use_up }}
+          ON_HAND: ${{ inputs.on_hand }}
+          TRIP: ${{ inputs.trip }}
+          CHEAPEST: ${{ inputs.cheapest }}
+          LONG_COOKS: ${{ inputs.long_cooks }}
+          LONG_COOK_HOW: ${{ inputs.long_cook_how }}

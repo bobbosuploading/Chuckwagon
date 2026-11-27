@@ -193,7 +193,8 @@ export const planMealsForStore = onCall(
     requireApp(request, "planMealsForStore");
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to plan meals");
     const data = request.data as PlanRequest;
-    if (!data?.storeId) throw new HttpsError("invalid-argument", "storeId is required");
+    // A "no store trip" plan cooks from what's at home, so it needs no store.
+    if (!data?.storeId && data?.storeTrip !== "none") throw new HttpsError("invalid-argument", "storeId is required");
     const db = getFirestore();
     const uid = request.auth.uid;
     const reservation = await reservePlan(db, uid, data.premium === true);
