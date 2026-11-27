@@ -12,6 +12,8 @@ import VisionKit
 struct BarcodeScanView: View {
     @Environment(HouseholdList.self) private var list
     @Environment(\.dismiss) private var dismiss
+    /// Adds to the household's on-hand list instead of the shopping list.
+    var toOnHand = false
 
     private enum Stage: Equatable {
         case scanning
@@ -125,7 +127,7 @@ struct BarcodeScanView: View {
                     Task { await add(code) }
                 } label: {
                     HStack {
-                        Text("Add to shopping list").font(Theme.body(.headline, weight: .bold))
+                        Text(toOnHand ? "Add to on hand" : "Add to shopping list").font(Theme.body(.headline, weight: .bold))
                         if adding { Spacer(); ProgressView() }
                     }
                 }
@@ -167,9 +169,11 @@ struct BarcodeScanView: View {
         defer { adding = false }
         let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            let isNew = try await list.add(text, note: note, barcode: code)
+            let isNew = toOnHand
+                ? try await list.addOnHand(text, note: note, barcode: code)
+                : try await list.add(text, note: note, barcode: code)
             BarcodeNames.remember(text, for: code)
-            added.append(isNew ? text : "\(text) (already on the list)")
+            added.append(isNew ? text : "\(text) (already on \(toOnHand ? "hand" : "the list"))")
             reset()
         } catch {
             problem = Backend.friendlyMessage(for: error)

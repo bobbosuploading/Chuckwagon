@@ -4,7 +4,8 @@
  * Env: ANTHROPIC_API_KEY, GOOGLE_APPLICATION_CREDENTIALS (Firebase service account),
  *      optional STORE_ID (defaults to the first store), MODEL, MEALS, HOUSEHOLD, DIET, DISLIKES, BUDGET,
  *      EXTRA (extra meal ideas; the summary then also shows a swap of the last main meal),
- *      STORE_IDS (more stores, comma-separated), VARIANTS (comma-separated thinking efforts to
+ *      STORE_IDS (more stores, comma-separated), USE_UP / ON_HAND (foods at home, ";"-separated),
+ *      TRIP (full, minimal, none), CHEAPEST (true), LONG_COOKS (0-2), LONG_COOK_HOW (smoker, slow cooker, any), VARIANTS (comma-separated thinking efforts to
  *      make the plan with, one after another, to compare timing and quality: medium, low, high).
  * Saves the plan to plans/{id} and prints a readable summary (also to the GitHub job summary).
  */
@@ -50,7 +51,7 @@ function toMarkdown(p: MealPlan): string {
   );
   out.push("");
   p.meals.forEach((m, i) => {
-    out.push(`## ${i + 1}. ${m.name} (${m.servings} servings, ${m.timeMinutes} min)`);
+    out.push(`## ${i + 1}. ${m.name} (${m.servings} servings, ${m.timeMinutes} min${m.longCook ? ", long cook" : ""})`);
     out.push(m.ingredients.map((g) => `- ${g.amount} ${g.item}${g.dealId ? " **(on sale)**" : ""}`).join("\n"));
     out.push("");
     out.push(m.steps.map((s, j) => `${j + 1}. ${s}`).join("\n"));
@@ -108,6 +109,7 @@ async function main() {
     storeId = first.docs[0].id;
   }
   const num = (v?: string) => (v ? Number(v) : undefined);
+  const list = (v?: string) => (v ? v.split(";").map((t) => t.trim()).filter(Boolean) : undefined);
   const req: PlanRequest = {
     storeId,
     storeIds: [storeId, ...(process.env.STORE_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean)],
@@ -121,6 +123,13 @@ async function main() {
     theme: process.env.THEME || undefined,
     // NIGHT_THEMES: one per meal, separated by ";" (blank = any), e.g. "Mexican;;Seafood".
     nightThemes: process.env.NIGHT_THEMES ? process.env.NIGHT_THEMES.split(";") : undefined,
+    // USE_UP and ON_HAND: foods at home, separated by ";".
+    useUp: list(process.env.USE_UP),
+    onHand: list(process.env.ON_HAND),
+    storeTrip: (process.env.TRIP || undefined) as PlanRequest["storeTrip"],
+    cheapest: process.env.CHEAPEST === "true" || undefined,
+    longCooks: num(process.env.LONG_COOKS),
+    longCookHow: (process.env.LONG_COOK_HOW || undefined) as PlanRequest["longCookHow"],
   };
   const anthropic = new Anthropic();
   const model = process.env.MODEL || undefined;

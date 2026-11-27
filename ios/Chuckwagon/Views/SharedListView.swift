@@ -53,6 +53,20 @@ struct SharedListView: View {
                     if let message { Text(message) }
                 }
 
+                Section {
+                    NavigationLink {
+                        OnHandView()
+                    } label: {
+                        HStack {
+                            Label("On hand at home", systemImage: "refrigerator")
+                            Spacer()
+                            if !list.onHand.isEmpty {
+                                Text("\(list.onHand.count)").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
                 if list.loading && list.items.isEmpty {
                     Section { ProgressView().frame(maxWidth: .infinity) }
                 } else if list.items.isEmpty {
@@ -76,9 +90,14 @@ struct SharedListView: View {
                         HStack {
                             Text("In the cart")
                             Spacer()
+                            Button("Move to on hand") { moveToOnHand() }
+                                .font(Theme.body(.caption, weight: .bold))
+                            Text("·").foregroundStyle(.secondary)
                             Button("Clear") { list.clearChecked() }
                                 .font(Theme.body(.caption, weight: .bold))
                         }
+                    } footer: {
+                        Text("Home from the store? \"Move to on hand\" puts what you bought on your on-hand list, so plans can cook from it.")
                     }
                 }
 
@@ -153,6 +172,18 @@ struct SharedListView: View {
             }
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func moveToOnHand() {
+        let bought = checked
+        Task {
+            do {
+                let added = try await list.moveToOnHand(bought)
+                message = "Moved \(bought.count) \(bought.count == 1 ? "item" : "items") to on hand\(added < bought.count ? " (some were there already)" : "")."
+            } catch {
+                message = Backend.friendlyMessage(for: error)
+            }
+        }
     }
 
     private func addTyped() {

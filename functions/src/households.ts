@@ -8,6 +8,8 @@
  * Firestore:
  * - households/{id}: { members: [uid], names: { uid: "Bobby" }, createdBy, createdAt }.
  *   Members can read it; only these functions write it.
+ * - households/{id}/onHand/{itemId}: food the household has at home ("Cook from what I have"),
+ *   read and written by members straight from the app like items.
  * - households/{id}/items/{itemId}: the list. Members read and write items straight from the app
  *   (firestore.rules checks membership and the item's shape), so list edits cost no function runs.
  * - householdInvites/{code}: { householdId, createdBy, expiresAt, uses }. Backend only.
@@ -176,6 +178,18 @@ export async function joinHousehold(db: Firestore, uid: string, code: string, na
     const batch = db.batch();
     const newItems = db.collection("households").doc(joined.householdId).collection("items");
     for (const doc of items.docs) batch.set(newItems.doc(), doc.data());
+    // The on-hand list comes too, skipping food the new household already has.
+    const [onHand, theirs] = await Promise.all([
+      oldRef.collection("onHand").limit(HOUSEHOLD_LIMITS.maxCarriedItems).get(),
+      db.collection("households").doc(joined.householdId).collection("onHand").select("text").get(),
+    ]);
+    const key = (t: unknown) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const have = new Set(theirs.docs.map((d) => key(d.get("text"))));
+    const newOnHand = db.collection("households").doc(joined.householdId).collection("onHand");
+    for (const doc of onHand.docs) {
+      if (have.has(key(doc.get("text")))) continue;
+      batch.set(newOnHand.doc(), doc.data());
+    }
     await batch.commit();
     await db.recursiveDelete(oldRef);
   }

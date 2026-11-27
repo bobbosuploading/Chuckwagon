@@ -12,6 +12,7 @@ struct PlanTripView: View {
     static let maxStores = 3
 
     @Environment(Preferences.self) private var prefs
+    @Environment(HouseholdList.self) private var household
     @Environment(\.dismiss) private var dismiss
     /// Picked stores, in the order they were picked. The first one is the main store.
     @State private var picked: [String] = []
@@ -22,6 +23,14 @@ struct PlanTripView: View {
     /// What the shopper feels like eating this trip (not saved for next time).
     @State private var mood = MealMood()
     @State private var premium = false
+    /// "Cook from what I have": on-hand items to use up (by id), others typed in, and the trip.
+    @State private var cookFromHave = false
+    @State private var useUpIds: Set<String> = []
+    @State private var typedUseUp = ""
+    @State private var storeTrip = "full"
+    @State private var showAllOnHand = false
+    /// The cheapest meals possible, for this trip only.
+    @State private var cheapest = false
     @State private var planning = false
     @State private var plan: MealPlan?
     /// What the planner has done so far, while planning.
@@ -90,7 +99,8 @@ struct PlanTripView: View {
             if let error {
                 Section { Text(error).foregroundStyle(.red) }
             }
-            storesSection
+            cookFromHaveSection
+            if !noTrip { storesSection }
             Section {
                 Stepper("Meals: \(prefs.mealCount)", value: $prefs.mealCount, in: max(1, included.count)...7)
                 Stepper("People: \(prefs.householdSize)", value: $prefs.householdSize, in: 1...10)
@@ -107,37 +117,44 @@ struct PlanTripView: View {
             } footer: {
                 Text("Changes here are saved for next time too.")
             }
-            Section {
-                Toggle("Stick to a budget", isOn: Binding(
-                    get: { prefs.weeklyBudget > 0 },
-                    set: { prefs.weeklyBudget = $0 ? Preferences.defaultBudget : 0 }
-                ))
-                if prefs.weeklyBudget > 0 {
-                    Stepper(value: $prefs.weeklyBudget, in: 20...500, step: 5) {
-                        HStack {
-                            Text("I have")
-                            Spacer()
-                            Text(Double(prefs.weeklyBudget).wholeDollars)
-                                .font(Theme.body(.body, weight: .bold))
-                                .foregroundStyle(Theme.red)
+            planStyleSection
+            if !noTrip {
+                Section {
+                    Toggle("Stick to a budget", isOn: Binding(
+                        get: { prefs.weeklyBudget > 0 },
+                        set: { prefs.weeklyBudget = $0 ? Preferences.defaultBudget : 0 }
+                    ))
+                    if prefs.weeklyBudget > 0 {
+                        Stepper(value: $prefs.weeklyBudget, in: 20...500, step: 5) {
+                            HStack {
+                                Text("I have")
+                                Spacer()
+                                Text(Double(prefs.weeklyBudget).wholeDollars)
+                                    .font(Theme.body(.body, weight: .bold))
+                                    .foregroundStyle(Theme.red)
+                            }
                         }
                     }
+                } header: {
+                    Text("Budget")
+                } footer: {
+                    Text(prefs.weeklyBudget > 0
+                         ? "We'll build the meals and the whole list to fit, sale and everyday items together."
+                         : "Turn this on and we'll plan around what you have to spend this trip.")
                 }
-            } header: {
-                Text("Budget")
-            } footer: {
-                Text(prefs.weeklyBudget > 0
-                     ? "We'll build the meals and the whole list to fit, sale and everyday items together."
-                     : "Turn this on and we'll plan around what you have to spend this trip.")
             }
-            MealMoodSection(mood: $mood, mealCount: prefs.mealCount, includedNames: included.map(\.name))
+            if !cheapest {
+                MealMoodSection(mood: $mood, mealCount: prefs.mealCount, includedNames: included.map(\.name))
+            }
             includedSection
             Section {
                 TextField("e.g. rice, eggs, onions", text: $haveAtHome, axis: .vertical)
             } header: {
                 Text("Already have at home")
             } footer: {
-                Text("We'll leave these off your list. Salt, pepper, oil and basic spices are assumed.")
+                Text(household.onHand.isEmpty
+                     ? "We'll leave these off your list. Salt, pepper, oil and basic spices are assumed."
+                     : "We'll leave these off your list. Salt, pepper, oil and basic spices are assumed, and so is everything on your on-hand list.")
             }
             Section {
                 Toggle("Chef's pick (premium meals)", isOn: $premium)
@@ -151,10 +168,133 @@ struct PlanTripView: View {
                 Label("Plan my meals", systemImage: "sparkles")
             }
             .buttonStyle(BigButtonStyle())
-            .disabled(picked.isEmpty)
+            .disabled(!canPlan)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
         }
+    }
+
+    private var noTrip: Bool { cookFromHave && storeTrip == "none" }
+
+    private var canPlan: Bool {
+        if noTrip { return !useUpTexts.isEmpty || !household.onHand.isEmpty || !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty }
+        return !picked.isEmpty
+    }
+
+    /// On-hand food, proteins first, then the rest by group.
+    private var onHandSorted: [HouseholdList.OnHandItem] {
+        household.onHand.sorted { a, b in
+            func rank(_ i: HouseholdList.OnHandItem) -> Int {
+                (i.useSoon ? 0 : 100) + (HouseholdList.onHandKinds.firstIndex(of: i.kind.isEmpty ? "Other" : i.kind) ?? 9)
+            }
+            return (rank(a), a.text.lowercased()) < (rank(b), b.text.lowercased())
+        }
+    }
+
+    /// What has to be cooked: picked on-hand items and anything typed.
+    private var useUpTexts: [String] {
+        guard cookFromHave else { return [] }
+        let picked = household.onHand.filter { useUpIds.contains($0.id) }.map(\.planText)
+        let typed = typedUseUp.split(whereSeparator: { $0 == "," || $0 == "\n" })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return Array((picked + typed).prefix(12))
+    }
+
+    private var cookFromHaveSection: some View {
+        Section {
+            Toggle("Cook from what I have", isOn: $cookFromHave.animation())
+                .onChange(of: cookFromHave) { _, on in
+                    if on, useUpIds.isEmpty {
+                        useUpIds = Set(household.onHand.filter(\.useSoon).map(\.id))
+                    }
+                }
+            if cookFromHave {
+                let all = onHandSorted
+                let shown = showAllOnHand ? all : Array(all.prefix(10))
+                ForEach(shown) { item in
+                    Button {
+                        if useUpIds.contains(item.id) { useUpIds.remove(item.id) } else { useUpIds.insert(item.id) }
+                    } label: {
+                        HStack {
+                            Image(systemName: useUpIds.contains(item.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(useUpIds.contains(item.id) ? Theme.sage : Theme.ink.opacity(0.35))
+                            Text(item.planText).foregroundStyle(Theme.ink)
+                            Spacer()
+                            if item.useSoon {
+                                Image(systemName: "flame.fill").foregroundStyle(Theme.red).font(.caption)
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+                if all.count > shown.count {
+                    Button("Show all \(all.count) on hand") { showAllOnHand = true }
+                        .font(Theme.body(.footnote, weight: .semibold))
+                }
+                TextField("Anything else to use up, like 2 lb ground beef", text: $typedUseUp, axis: .vertical)
+                NavigationLink {
+                    OnHandView()
+                } label: {
+                    Label(household.onHand.isEmpty ? "Start your on-hand list" : "Edit on-hand list", systemImage: "refrigerator")
+                }
+                Picker("Store trip", selection: $storeTrip) {
+                    Text("Full trip").tag("full")
+                    Text("Few items").tag("minimal")
+                    Text("No trip").tag("none")
+                }
+                .pickerStyle(.segmented)
+            }
+        } header: {
+            Text("Use what's at home")
+        } footer: {
+            if !cookFromHave {
+                Text("Pick proteins and other food that needs using up, and skip the store or grab just the few things missing.")
+            } else {
+                switch storeTrip {
+                case "none":
+                    Text("No store trip: meals use only what you have, plus salt, pepper, oil and basic spices. If there isn't enough for \(prefs.mealCount) meals, you'll get fewer.")
+                case "minimal":
+                    Text("A quick trip: we'll build meals around what you have and buy only the few things missing, on sale where we can.")
+                default:
+                    Text("Checked food goes into the meals first. The rest of your on-hand list stays off the grocery list, and we fill in from the sales.")
+                }
+            }
+        }
+    }
+
+    private var planStyleSection: some View {
+        @Bindable var prefs = prefs
+        return Section {
+            Toggle("Cheapest possible", isOn: $cheapest)
+            Stepper(value: $prefs.longCooks, in: 0...min(2, prefs.mealCount)) {
+                Text(prefs.longCooks == 0 ? "Long cooks: none" : "Long cooks: \(prefs.longCooks)")
+            }
+            if prefs.longCooks > 0 {
+                Picker("Cooked on", selection: $prefs.longCookHow) {
+                    Text("Smoker").tag("smoker")
+                    Text("Slow cooker").tag("slow cooker")
+                    Text("Either").tag("any")
+                }
+            }
+        } header: {
+            Text("Plan style")
+        } footer: {
+            Text(planStyleFooter)
+        }
+    }
+
+    private var planStyleFooter: String {
+        var parts: [String] = []
+        if cheapest {
+            parts.append("Cheapest possible: the lowest cost per meal, even if it's simple. Only your diet and allergies count; moods and dislikes are skipped.")
+        }
+        if prefs.longCooks > 0 {
+            parts.append("Long cooks are low-and-slow meals like smoked ribs, smoked chicken, brisket or a slow-cooker roast. They take hours, so they're best on a weekend; the plan marks them.")
+        } else if !cheapest {
+            parts.append("Cheapest possible makes the lowest-cost meals. Long cooks add smoked ribs, chicken, brisket or a slow-cooker meal for the weekend.")
+        }
+        return parts.joined(separator: " ")
     }
 
     private var includedSection: some View {
@@ -248,16 +388,29 @@ struct PlanTripView: View {
     }
 
     private func makePlan() async {
-        guard let main = picked.first else { return }
-        prefs.planStoreIds = picked
+        guard canPlan else { return }
+        let main = noTrip ? "" : (picked.first ?? "")
+        if !noTrip { prefs.planStoreIds = picked }
+        let useUp = useUpTexts
+        let useUpKeys = Set(useUp.map(HouseholdList.key))
+        let extras = Backend.PlanExtras(
+            onHand: household.onHand.map(\.planText).filter { !useUpKeys.contains(HouseholdList.key($0)) },
+            useUp: useUp,
+            storeTrip: cookFromHave ? storeTrip : "full",
+            cheapest: cheapest,
+            longCooks: min(prefs.longCooks, prefs.mealCount),
+            longCookHow: prefs.longCookHow
+        )
         planning = true
         error = nil
         progress = nil
         defer { planning = false }
         do {
-            plan = try await Backend.planMeals(storeId: main, alsoStoreIds: Array(picked.dropFirst()), prefs: prefs, haveAtHome: haveAtHome,
+            plan = try await Backend.planMeals(storeId: main, alsoStoreIds: noTrip ? [] : Array(picked.dropFirst()), prefs: prefs, haveAtHome: haveAtHome,
                                               premium: premium, includeMeals: included,
-                                              theme: mood.theme, nightThemes: mood.nightThemes(mealCount: prefs.mealCount),
+                                              theme: cheapest ? nil : mood.theme,
+                                              nightThemes: cheapest ? nil : mood.nightThemes(mealCount: prefs.mealCount),
+                                              options: extras,
                                               onProgress: { progress = $0 })
         } catch {
             self.error = Backend.friendlyMessage(for: error, planning: true)

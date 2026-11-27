@@ -158,7 +158,7 @@ struct SavedMealPicker: View {
                     Text(meal.name)
                         .font(Theme.body(.body, weight: .semibold))
                         .foregroundStyle(Theme.ink)
-                    Text("\(meal.timeMinutes) min · \(meal.ingredients.count) ingredients")
+                    Text("\(meal.timeText) · \(meal.ingredients.count) ingredients")
                         .font(Theme.body(.caption))
                         .foregroundStyle(Theme.ink.opacity(0.6))
                     MealNoteLine(name: meal.name, lines: 1)

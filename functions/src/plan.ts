@@ -73,6 +73,120 @@ export interface PlanRequest {
    * shopper's account, never taken from the app, and not saved with the plan. Cleaned by mealNotesFrom.
    */
   mealNotes?: MealNote[];
+  /**
+   * Optional: food the household already has, from the app's shared "On hand" list. The planner
+   * may use it and leaves it off the grocery list. Cleaned by cleanFoodList.
+   */
+  onHand?: string[];
+  /**
+   * Optional: food at home that needs using up ("2 lb chicken thighs", "half a bag of spinach").
+   * Every item goes into a main meal. Cleaned by cleanFoodList.
+   */
+  useUp?: string[];
+  /**
+   * Optional: how much shopping the plan may need. "full" (the default) is a normal sale-driven
+   * trip; "minimal" buys only the few things missing from what's at home, from the sales where it
+   * can; "none" cooks only from what's at home, with no store trip (no deals are loaded).
+   */
+  storeTrip?: StoreTrip;
+  /**
+   * Optional: the cheapest meals possible, however plain. Only diet and allergies (and meals the
+   * shopper said never to suggest) still count; dislikes and themes are ignored.
+   */
+  cheapest?: boolean;
+  /** Optional: 0 to 2 main meals that are long, low-and-slow cooks (smoker or slow cooker). */
+  longCooks?: number;
+  /** Optional: how the long cooks get cooked. Default "any". */
+  longCookHow?: LongCookHow;
+}
+
+export type StoreTrip = "full" | "minimal" | "none";
+export type LongCookHow = "smoker" | "slow cooker" | "any";
+export const MAX_LONG_COOKS = 2;
+/** Most on-hand and use-up items the planner reads (the app's list can be longer). */
+export const MAX_ON_HAND = 60;
+export const MAX_USE_UP = 12;
+const MAX_FOOD_ITEM_LENGTH = 60;
+
+/**
+ * Cleans a list of foods the shopper typed or keeps on their on-hand list: each one cleaned like
+ * a theme (no characters that could pose as another prompt field), blanks and repeats dropped.
+ */
+export function cleanFoodList(raw: unknown, max: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of raw) {
+    if (out.length >= max) break;
+    const text = cleanTheme(v, MAX_FOOD_ITEM_LENGTH);
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
+export function cleanStoreTrip(raw: unknown): StoreTrip {
+  return raw === "minimal" || raw === "none" ? raw : "full";
+}
+
+export function cleanLongCooks(raw: unknown): number {
+  const n = typeof raw === "number" && Number.isFinite(raw) ? Math.floor(raw) : 0;
+  return Math.max(0, Math.min(MAX_LONG_COOKS, n));
+}
+
+export function cleanLongCookHow(raw: unknown): LongCookHow {
+  return raw === "smoker" || raw === "slow cooker" ? raw : "any";
+}
+
+/** Store name on a plan cooked only from what's at home. */
+export const NO_TRIP_STORE_NAME = "From what you have";
+
+/**
+ * The prompt lines for cooking from what's at home, the cheapest mode and long cooks, or "" when
+ * none is set. Kept out of SYSTEM so everyday plans don't pay for the extra tokens.
+ */
+export function specialModesText(a: {
+  onHand: string[];
+  useUp: string[];
+  storeTrip: StoreTrip;
+  cheapest: boolean;
+  longCooks: number;
+  longCookHow: LongCookHow;
+  mealCount: number;
+}): string {
+  const out: string[] = [];
+  if (a.useUp.length) {
+    out.push(`USE UP (at home, needs cooking soon): ${a.useUp.join("; ")}
+- Build the main meals around these first. Every USE UP item goes into at least one main meal (a protein as that meal's main protein). Never put them on the grocery list.`);
+  }
+  if (a.onHand.length) {
+    out.push(`ON HAND (at home already): ${a.onHand.join("; ")}
+- Use these where they fit, before buying anything like them. Never put them on the grocery list.`);
+  }
+  if (a.storeTrip === "none") {
+    out.push(`NO STORE TRIP: the shopper isn't going to the store. Cook only from USE UP, ON HAND and HAVE AT HOME, plus salt, pepper, oil and basic spices. Leave the grocery list empty and cite no sale items. Pick meals that need nothing else; if a meal would be much better with one missing item, mention it in notes instead. If there isn't enough food for ${a.mealCount} meals, make fewer and say what ran short in notes.`);
+  } else if (a.storeTrip === "minimal") {
+    out.push(`MINIMAL TRIP: the shopper wants a quick, small trip. Build the meals from USE UP, ON HAND and HAVE AT HOME, and buy only what's missing to finish them: 6 grocery lines or fewer, cheap and common, using a SALE ITEM whenever one fits.`);
+  }
+  if (a.cheapest) {
+    out.push(`CHEAPEST POSSIBLE: the lowest cost per serving comes before everything except DIET and ALLERGIES. Plain, simple meals are welcome (beans and rice, eggs, pasta, potatoes, chicken leg quarters, soups, casseroles). Buy the fewest, cheapest packages and reuse them across meals. Ignore DISLIKES, MOOD and NIGHT THEMES.`);
+  }
+  if (a.longCooks > 0) {
+    const how =
+      a.longCookHow === "smoker"
+        ? "on the shopper's smoker (they barbecue)"
+        : a.longCookHow === "slow cooker"
+          ? "in a slow cooker"
+          : "on a smoker or in a slow cooker (give smoker steps with a slow-cooker or oven option)";
+    out.push(`LONG COOKS: ${a.longCooks}
+- Make exactly ${a.longCooks} of the main meals ${a.longCooks === 1 ? "a long, low-and-slow cook" : "long, low-and-slow cooks"} ${how}: for example ${a.longCookHow === "slow cooker" ? "pot roast, pulled pork, salsa chicken, chili or carnitas" : "smoked pork ribs, smoked whole or spatchcocked chicken, brisket or chuck roast, or pulled pork shoulder"}. Pick cuts from SALE ITEMS when one fits${a.cheapest ? ", and the cheapest ones (pork shoulder, leg quarters, whole chickens)" : ""}.
+- Set longCook true on those meals only. MAX COOK TIME doesn't apply to them: timeMinutes is the whole time, smoking or slow cooking included. The steps give temperatures and when to start (for example rub the night before, on the smoker by noon), and the hands-on parts.
+- Where it fits, a later meal uses the leftover meat, cooked once (don't buy it twice).
+- Long cooks are best on a weekend or a day off; say so in notes.`);
+  }
+  return out.length ? `${out.join("\n")}\n` : "";
 }
 
 /**
@@ -210,6 +324,7 @@ const PlanSchema = z.object({
       name: z.string(),
       servings: z.number().int(),
       timeMinutes: z.number().int(),
+      longCook: z.boolean().describe("True only for a meal made as one of the LONG COOKS; otherwise false"),
       ingredients: z.array(
         z.object({
           item: z.string(),
@@ -483,6 +598,33 @@ function looseName(t: string): string {
 /** Words that say little about which ingredient a line is. */
 const FILLER_WORDS = new Set(["fresh", "large", "small", "medium", "whole", "boneless", "skinless", "chopped", "sliced", "diced", "shredded", "ground", "frozen", "canned", "can", "bag", "pack", "package", "jar", "bunch", "the", "and", "with", "for", "lean", "low", "fat", "free", "family", "size", "pkg", "bottle", "box"]);
 
+/** Amount and container words, which don't say what a food is ("3 lb", "half a bag"). */
+const AMOUNT_WORDS = new Set(["lb", "lbs", "pound", "oz", "ounce", "cup", "half", "quarter", "dozen", "piece", "about", "some", "left", "leftover", "box", "container", "carton", "gallon", "bunch", "head", "clove", "stick", "tbsp", "tsp", "few", "couple", "one", "two", "three", "four", "five", "six"]);
+
+/** The words that say what a food is: "half bag fresh spinach" -> ["spinach"]. */
+export function foodWords(t: string): string[] {
+  return looseName(t)
+    .split(" ")
+    .filter((w) => w.length >= 3 && !FILLER_WORDS.has(w) && !AMOUNT_WORDS.has(w));
+}
+
+/**
+ * True when an ingredient is something the shopper has at home (an on-hand or use-up item):
+ * every food word of one appears in the other, so "chicken thighs" matches "bone-in chicken
+ * thighs" and "half bag spinach" matches "fresh spinach", but "rice" doesn't match "rice vinegar".
+ * Leftovers from another meal count too.
+ */
+export function isAtHome(ingredient: string, atHome: string[][]): boolean {
+  const ing = foodWords(ingredient);
+  if (ing.length === 0) return false;
+  if (/\bleftover/i.test(ingredient)) return true;
+  // The last word names the food ("rice vinegar" is vinegar, not rice), so it has to match.
+  const head = ing[ing.length - 1];
+  return atHome.some(
+    (h) => h.length > 0 && h[h.length - 1] === head && (h.every((w) => ing.includes(w)) || ing.every((w) => h.includes(w)))
+  );
+}
+
 /**
  * Which meals a grocery line is for. The model's forMeals sometimes names a meal a little
  * differently ("Beef Tacos" for "Easy beef tacos"), or names one that was renamed to keep names
@@ -637,7 +779,11 @@ export async function planMeals(
     }
   };
   report({ stage: "thinking", meals: [] });
-  const storeIds = [...new Set([req.storeId, ...(req.storeIds ?? [])])].slice(0, 3);
+  // "No store trip" cooks from what's at home only, so no stores or deals are needed.
+  const storeTrip = cleanStoreTrip(req.storeTrip);
+  const noTrip = storeTrip === "none";
+  const storeIds = noTrip ? [] : [...new Set([req.storeId, ...(req.storeIds ?? [])])].filter(Boolean).slice(0, 3);
+  if (!noTrip && storeIds.length === 0) throw new Error("storeId is required");
   const storeNames = new Map<string, string>();
   const storeChains = new Map<string, string>();
   // Stores in a price region share one store's deals (see regions.ts): dealsFrom says whose.
@@ -664,10 +810,21 @@ export async function planMeals(
   // Save the cleaned themes with the plan, not what was sent.
   const dislikedMeals = dislikedMealsFrom(req.dislikedMeals);
   const mealNotes = mealNotesFrom(req.mealNotes);
+  const onHand = cleanFoodList(req.onHand, MAX_ON_HAND);
+  const useUp = cleanFoodList(req.useUp, MAX_USE_UP);
+  const cheapest = req.cheapest === true;
+  const longCooks = Math.min(cleanLongCooks(req.longCooks), mealCount);
+  const longCookHow = cleanLongCookHow(req.longCookHow);
   req = {
     ...req,
     theme: theme || undefined,
     nightThemes: nightThemes.length ? nightThemes : undefined,
+    onHand: onHand.length ? onHand : undefined,
+    useUp: useUp.length ? useUp : undefined,
+    storeTrip: storeTrip === "full" ? undefined : storeTrip,
+    cheapest: cheapest || undefined,
+    longCooks: longCooks || undefined,
+    longCookHow: longCooks ? longCookHow : undefined,
     dislikedMeals: dislikedMeals.length ? dislikedMeals : undefined,
     // Private notes stay on the shopper's account; they go into the prompt but not the saved plan.
     mealNotes: undefined,
@@ -727,26 +884,29 @@ export async function planMeals(
         dealDocIds.set(key, `shared_${sharedId}`);
       });
   }
-  if (deals.size === 0) throw new NoDealsError(storeIds, [...new Set(storeIds.map((id) => storeNames.get(id) || "this store"))]);
+  if (deals.size === 0 && !noTrip) throw new NoDealsError(storeIds, [...new Set(storeIds.map((id) => storeNames.get(id) || "this store"))]);
   const timingsMs: Record<string, number> = { loadDeals: Date.now() - started };
   let drafts = 0;
 
   const lines = [...deals.entries()]
     .map(([id, d]) => dealLine(d, id, multi ? storeNames.get(d.storeId) : undefined))
     .join("\n");
-  const user = `${multi ? "STORES" : "STORE"}: ${storeIds.map((id) => storeNames.get(id)).join(", ")}
+  // The cheapest mode goes by diet and allergies only, so dislikes and themes stay out of the prompt.
+  const dislikes = cheapest ? "" : req.dislikes;
+  const themeLines = cheapest ? "" : themesText(theme, nightThemes, includeMeals.length);
+  const user = `${noTrip ? "STORE: none (no store trip)" : `${multi ? "STORES" : "STORE"}: ${storeIds.map((id) => storeNames.get(id)).join(", ")}`}
 HOUSEHOLD SIZE: ${req.householdSize ?? 3}
 NUMBER OF MEALS: ${mealCount}
 EXTRA MEAL IDEAS: ${extraMeals}${extraMeals > 0 ? ` (return ${mealCount + extraMeals} meals: your ${mealCount} main meals first, then ${extraMeals} the shopper can swap in)` : ""}
 MAX COOK TIME: ${req.maxCookMinutes ?? 45} minutes
 DIET: ${req.diet || "none"}
 ALLERGIES: ${req.allergies || "none"}
-DISLIKES: ${req.dislikes || "none"}
+DISLIKES: ${dislikes || "none"}
 ${dislikedMealsText(dislikedMeals)}${mealNotesText(mealNotes, includeMeals.map((m) => m.name))}HAVE AT HOME: ${req.haveAtHome || "salt, pepper, cooking oil, basic spices"}
 BUDGET: ${budget ? `$${budget} for the whole list (aim for about $${Math.floor(budget * BUDGET_AIM)} to leave room for price surprises)` : "none"}
-${themesText(theme, nightThemes, includeMeals.length)}${includeMeals.length ? `\nMEALS TO INCLUDE (${includeMeals.length} of the ${mealCount} main meals):\n${includeMealsText(includeMeals)}\n` : ""}
+${themeLines}${specialModesText({ onHand, useUp, storeTrip, cheapest, longCooks, longCookHow, mealCount })}${includeMeals.length ? `\nMEALS TO INCLUDE (${includeMeals.length} of the ${mealCount} main meals):\n${includeMealsText(includeMeals)}\n` : ""}
 SALE ITEMS:
-${lines}`;
+${noTrip ? "(none: no store trip)" : lines}`;
 
   // Token use across every call, split by model so the cost estimate stays right.
   const tokens = new Map<string, { input: number; output: number }>();
@@ -822,12 +982,18 @@ ${lines}`;
     const listedNames = new Set(listed.map((li) => norm(li.item)));
     // Basic spices are assumed, so "1 tsp chili powder" shouldn't add a $1.25 jar to a tight budget.
     const BASIC_SPICES = "basic spices, spices, chili powder, garlic powder, onion powder, paprika, cumin, oregano, dried herbs, seasoning";
-    const atHome = `${req.haveAtHome || "salt, pepper, cooking oil, oil"}, ${BASIC_SPICES}`
+    const atHome = [`${req.haveAtHome || "salt, pepper, cooking oil, oil"}, ${BASIC_SPICES}`, ...onHand, ...useUp]
+      .join(",")
       .split(",")
       .map(norm)
       .filter(Boolean);
+    // On-hand and use-up food is at home, so it never goes on the list, even if the model listed it.
+    const homeWords = [...onHand, ...useUp].map(foodWords).filter((w) => w.length > 0);
+    const homeLines = listed.filter((li) => !li.dealId && isAtHome(li.item, homeWords));
+    for (const li of homeLines) listed.splice(listed.indexOf(li), 1);
     const missing = new Map<string, ModelPlan["groceryList"][number]>();
-    for (const meal of plan.meals) {
+    // With no store trip there's nothing to add: anything the model still listed is shown as "you may need".
+    for (const meal of noTrip ? [] : plan.meals) {
       for (const ing of meal.ingredients) {
         const deal = ing.dealId ? deals.get(ing.dealId) : undefined;
         const key = deal ? `deal:${ing.dealId}` : `name:${norm(ing.item)}`;
@@ -835,7 +1001,7 @@ ${lines}`;
         // Loose match, so "Onion" counts as listed when "Onions" is, and "Pasta, any shape" when "Pasta" is.
         const name = norm(ing.item).replace(/s$/, "");
         const isListed = [...listedNames].some((n) => n.includes(name) || name.includes(n.replace(/s$/, "")));
-        if (!deal && (isListed || name === "water" || atHome.some((h) => name.includes(h)))) continue;
+        if (!deal && (isListed || name === "water" || atHome.some((h) => name.includes(h)) || isAtHome(ing.item, homeWords))) continue;
         const existing = missing.get(key);
         if (existing) {
           existing.quantityNote += ` + ${ing.amount}`;
@@ -855,6 +1021,8 @@ ${lines}`;
       }
     }
     plan.groceryList = [...listed, ...missing.values()];
+    // Only meals asked for as long cooks get the badge.
+    if (longCooks === 0) for (const m of plan.meals) m.longCook = false;
 
     // Price the list from our own data.
     // Non-sale items go to the store where most sale items are bought.
@@ -872,7 +1040,7 @@ ${lines}`;
       if (!deal) {
         return {
           ...li, dealId: null, onSale: false, salePrice: null, regularPrice: null, lineTotal: null, lineSavings: null,
-          priceSource: null, pricedAs: null, storeId: mainStore, storeName: storeNames.get(mainStore)!, stockUp: null, checked: false,
+          priceSource: null, pricedAs: null, storeId: noTrip ? "" : mainStore, storeName: storeNames.get(mainStore) ?? "", stockUp: null, checked: false,
         };
       }
       // Weight-priced items have per-lb prices, so multiply by the estimated pounds instead of the package count.
@@ -905,7 +1073,10 @@ ${lines}`;
     const estimating = [...needsEstimate.keys()];
     report({ stage: "pricing", meals: progressMeals() });
     const pricingStarted = Date.now();
-    const matched = await priceRegularItems(
+    // No store trip: nothing to price (the list should be empty, or a short "you may need").
+    const matched = noTrip
+      ? { prices: [...regular, ...estimating].map(() => null), inputTokens: 0, outputTokens: 0 }
+      : await priceRegularItems(
       db,
       anthropic,
       [...regular, ...estimating].map((li) => ({ item: li.item, quantityNote: li.quantityNote, buyCount: li.buyCount, storeId: li.storeId }))
@@ -1008,8 +1179,8 @@ ${lines}`;
   }
 
   return {
-    storeId: req.storeId,
-    storeName: storeIds.map((id) => storeNames.get(id)).join(" + "),
+    storeId: noTrip ? "" : req.storeId,
+    storeName: noTrip ? NO_TRIP_STORE_NAME : storeIds.map((id) => storeNames.get(id)).join(" + "),
     storeIds,
     model: chosen.model,
     // Firestore rejects undefined values, so drop unset options.
