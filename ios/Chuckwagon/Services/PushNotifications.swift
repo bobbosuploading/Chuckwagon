@@ -10,7 +10,7 @@ extension Notification.Name {
 }
 
 /// Opt-in push notifications through Firebase Cloud Messaging: "new deals are in" for the
-/// shopper's stores, and a weekly meal planning reminder. The backend decides when to send
+/// shopper's stores, a weekly meal planning reminder, and sale alerts for the watch list. The backend decides when to send
 /// (functions/src/notifications.ts); the app only sends the shopper's choices and push token.
 enum PushNotifications {
     private static let tokenKey = "fcmToken"
@@ -74,10 +74,10 @@ enum PushNotifications {
         if !wants && sent == nil { return }
 
         var storeIds: [String] = []
-        if prefs.notifyNewDeals { storeIds = await dealStoreIds(prefs) }
+        if prefs.notifyNewDeals || prefs.wantsSaleAlerts { storeIds = await dealStoreIds(prefs) }
         let timeZone = TimeZone.current.identifier
         let signature = [pushToken, "\(prefs.notifyNewDeals)", "\(prefs.planReminderDay)", "\(prefs.planReminderHour)",
-                         timeZone, storeIds.joined(separator: ",")].joined(separator: "|")
+                         timeZone, storeIds.joined(separator: ","), prefs.watchSignature].joined(separator: "|")
         if !force && sent == signature { return }
         let payload: [String: Any] = [
             "token": pushToken,
@@ -86,6 +86,7 @@ enum PushNotifications {
             "planHour": prefs.planReminderHour,
             "timeZone": timeZone,
             "storeIds": storeIds,
+            "watch": prefs.watchPayload,
         ]
         do {
             _ = try await Functions.functions().httpsCallable("saveNotificationSettings").call(payload)
@@ -97,7 +98,7 @@ enum PushNotifications {
 
     /// Stores to watch for new ads: the starred ones, or the three closest if none are starred.
     @MainActor
-    private static func dealStoreIds(_ prefs: Preferences) async -> [String] {
+    static func dealStoreIds(_ prefs: Preferences) async -> [String] {
         if !prefs.favoriteStoreIds.isEmpty { return Array(prefs.favoriteStoreIds.prefix(8)) }
         guard let stores = try? await Backend.stores() else { return [] }
         return prefs.nearbyClosestFirst(stores).prefix(3).compactMap(\.id)

@@ -29,7 +29,28 @@ final class Preferences {
     var planReminderDay: Int { didSet { defaults.set(planReminderDay, forKey: "planReminderDay") } }
     var planReminderHour: Int { didSet { defaults.set(planReminderHour, forKey: "planReminderHour") } }
 
-    var wantsNotifications: Bool { notifyNewDeals || planReminderDay >= 0 }
+    /// Sale alerts (opt-in): ready-made watch items (ids from SaleWatch.items), the shopper's
+    /// own items, the make-it-yourself checks, and the smallest saving worth a notification.
+    var watchItems: [String] { didSet { defaults.set(watchItems, forKey: "watchItems") } }
+    var watchCustom: [String] { didSet { defaults.set(watchCustom, forKey: "watchCustom") } }
+    var watchBacon: Bool { didSet { defaults.set(watchBacon, forKey: "watchBacon") } }
+    var watchGroundBeef: Bool { didSet { defaults.set(watchGroundBeef, forKey: "watchGroundBeef") } }
+    var watchJerky: Bool { didSet { defaults.set(watchJerky, forKey: "watchJerky") } }
+    var watchAlertPct: Int { didSet { defaults.set(watchAlertPct, forKey: "watchAlertPct") } }
+
+    var wantsSaleAlerts: Bool { !watchItems.isEmpty || !watchCustom.isEmpty || watchBacon || watchGroundBeef || watchJerky }
+    var wantsNotifications: Bool { notifyNewDeals || planReminderDay >= 0 || wantsSaleAlerts }
+
+    /// What the backend gets for sale alerts (functions/src/saleWatch.ts, cleanWatchSettings).
+    var watchPayload: [String: Any] {
+        ["items": watchItems, "custom": watchCustom, "bacon": watchBacon, "groundBeef": watchGroundBeef,
+         "jerky": watchJerky, "pct": watchAlertPct]
+    }
+
+    /// Changes to sale alerts, in one string, so a change can be noticed and synced.
+    var watchSignature: String {
+        "\(watchItems.sorted())|\(watchCustom)|\(watchBacon)|\(watchGroundBeef)|\(watchJerky)|\(watchAlertPct)"
+    }
 
     /// Radius choices. The collectors look 50 miles out from each area, so going past 50
     /// would show nothing new without pulling more data.
@@ -101,5 +122,11 @@ final class Preferences {
         notifyNewDeals = defaults.bool(forKey: "notifyNewDeals")
         planReminderDay = defaults.object(forKey: "planReminderDay") as? Int ?? -1
         planReminderHour = defaults.object(forKey: "planReminderHour") as? Int ?? 17
+        watchItems = defaults.stringArray(forKey: "watchItems") ?? []
+        watchCustom = defaults.stringArray(forKey: "watchCustom") ?? []
+        watchBacon = defaults.bool(forKey: "watchBacon")
+        watchGroundBeef = defaults.bool(forKey: "watchGroundBeef")
+        watchJerky = defaults.bool(forKey: "watchJerky")
+        watchAlertPct = defaults.object(forKey: "watchAlertPct") as? Int ?? 30
     }
 }
