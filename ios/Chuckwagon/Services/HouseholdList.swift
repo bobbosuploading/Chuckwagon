@@ -24,6 +24,8 @@ final class HouseholdList {
         var checkedBy: String?
         var forMeals: [String]
         var storeName: String
+        /// Set on items added by scanning a barcode, so the exact product (brand and size) is kept.
+        var barcode: String
         var createdAt: Date?
     }
 
@@ -139,6 +141,7 @@ final class HouseholdList {
             checkedBy: d["checkedBy"] as? String,
             forMeals: d["forMeals"] as? [String] ?? [],
             storeName: d["storeName"] as? String ?? "",
+            barcode: d["barcode"] as? String ?? "",
             createdAt: (d["createdAt"] as? Timestamp)?.dateValue()
         )
     }
@@ -205,7 +208,7 @@ final class HouseholdList {
         db.collection("households").document(id).collection("items")
     }
 
-    private func newItemData(text: String, note: String = "", aisle: String = "", forMeals: [String] = [], storeName: String = "") -> [String: Any] {
+    private func newItemData(text: String, note: String = "", aisle: String = "", forMeals: [String] = [], storeName: String = "", barcode: String = "") -> [String: Any] {
         var data: [String: Any] = [
             "text": String(text.prefix(120)),
             "checked": false,
@@ -218,18 +221,19 @@ final class HouseholdList {
         if !trimmedName.isEmpty { data["addedByName"] = trimmedName }
         if !forMeals.isEmpty { data["forMeals"] = Array(forMeals.prefix(10)).map { String($0.prefix(80)) } }
         if !storeName.isEmpty { data["storeName"] = String(storeName.prefix(80)) }
+        if (8...14).contains(barcode.count), barcode.allSatisfy(\.isASCII), barcode.allSatisfy(\.isNumber) { data["barcode"] = barcode }
         return data
     }
 
     /// Adds one item typed by the shopper. Returns false if it's already on the list (not checked off).
     @discardableResult
-    func add(_ text: String, note: String = "") async throws -> Bool {
+    func add(_ text: String, note: String = "", barcode: String = "") async throws -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return false }
         if items.contains(where: { !$0.checked && Self.key($0.text) == Self.key(text) }) { return false }
         guard items.count < Self.maxItems else { throw Self.error("Your list is full. Clear checked items to make room.") }
         let id = try await ensureHousehold()
-        write(newItemData(text: text, note: note), to: itemsRef(id).document())
+        write(newItemData(text: text, note: note, barcode: barcode), to: itemsRef(id).document())
         return true
     }
 

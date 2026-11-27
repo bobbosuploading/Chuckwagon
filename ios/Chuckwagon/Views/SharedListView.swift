@@ -13,6 +13,7 @@ struct SharedListView: View {
     @State private var newItem = ""
     @State private var editing: HouseholdList.Item?
     @State private var message: String?
+    @State private var scanning = false
     @FocusState private var adding: Bool
 
     private var unchecked: [HouseholdList.Item] { list.items.filter { !$0.checked } }
@@ -42,6 +43,11 @@ struct SharedListView: View {
                         .buttonStyle(.borderless)
                         .disabled(newItem.trimmingCharacters(in: .whitespaces).isEmpty)
                         .accessibilityLabel("Add")
+                        Button { scanning = true } label: {
+                            Image(systemName: "barcode.viewfinder").font(.title2)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Scan a barcode")
                     }
                 } footer: {
                     if let message { Text(message) }
@@ -51,7 +57,7 @@ struct SharedListView: View {
                     Section { ProgressView().frame(maxWidth: .infinity) }
                 } else if list.items.isEmpty {
                     Section {
-                        Text("Nothing on the list yet. Type an item above, or open a meal plan and tap \"Add to shopping list\".")
+                        Text("Nothing on the list yet. Type an item above, tap the barcode button to scan something you always buy, or open a meal plan and tap \"Add to shopping list\".")
                             .font(Theme.body(.footnote))
                             .foregroundStyle(Theme.ink.opacity(0.65))
                     }
@@ -85,6 +91,7 @@ struct SharedListView: View {
             .toolbar {
                 if showsDone { Button("Done") { dismiss() } }
             }
+            .sheet(isPresented: $scanning) { BarcodeScanView() }
             .sheet(item: $editing) { item in
                 EditItemSheet(item: item)
                     .presentationDetents([.medium])

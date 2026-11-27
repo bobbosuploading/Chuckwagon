@@ -26,6 +26,7 @@ import {
   joinHousehold,
   leaveHousehold,
 } from "./households";
+import { lookupBarcode, normalizeBarcode } from "./barcodes";
 
 initializeApp();
 
@@ -692,6 +693,32 @@ export const joinHouseholdInvite = onCall(async (request) => {
   } catch (err) {
     householdHttpsError(err);
   }
+});
+
+/** Barcode lookups per shopper per day (each is cached, so repeats are free). */
+const BARCODE_LOOKUPS_PER_DAY = 60;
+
+/**
+ * Shopping list barcode scan (barcodes.ts): the product's name with brand and size.
+ * Data: { code } (UPC or EAN digits). Returns { code, found, name, brand, size }.
+ */
+export const barcodeProduct = onCall(async (request) => {
+  requireApp(request, "barcodeProduct");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const code = normalizeBarcode(request.data?.code);
+  if (!code) throw new HttpsError("invalid-argument", "That doesn't look like a product barcode.");
+  const db = getFirestore();
+  const uid = request.auth.uid;
+  const mine = db.collection("usage").doc(`${uid}_${today()}`);
+  await db.runTransaction(async (tx) => {
+    const m = await tx.get(mine);
+    if (((m.get("barcodeLookups") as number | undefined) ?? 0) >= BARCODE_LOOKUPS_PER_DAY) {
+      throw new HttpsError("resource-exhausted", "You've scanned a lot of barcodes today. Type the item's name instead, or try again tomorrow.");
+    }
+    tx.set(mine, { uid, day: today(), barcodeLookups: FieldValue.increment(1) }, { merge: true });
+  });
+  const product = await lookupBarcode(db, code);
+  return { code, found: !!product, name: product?.name ?? "", brand: product?.brand ?? "", size: product?.size ?? "" };
 });
 
 /** Leaves the shopper's household. The last one out removes the list. */

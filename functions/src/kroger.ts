@@ -92,4 +92,15 @@ export class KrogerClient {
     });
     return json.data ?? [];
   }
+
+  /** One product by its id (the UPC as 13 digits), or null if Kroger doesn't carry it. */
+  async productById(productId: string): Promise<KrogerProduct | null> {
+    try {
+      const json = await this.get<{ data?: KrogerProduct }>(`/products/${encodeURIComponent(productId)}`, {});
+      return json.data ?? null;
+    } catch (err) {
+      if (String(err).includes(" 404 ")) return null;
+      throw err;
+    }
+  }
 }

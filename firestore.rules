@@ -57,7 +57,7 @@ service cloud.firestore {
       }
       function validItem(d) {
         return d.keys().hasOnly(['text', 'note', 'aisle', 'checked', 'addedBy', 'addedByName', 'checkedBy',
-                                 'forMeals', 'storeName', 'createdAt', 'updatedAt'])
+                                 'forMeals', 'storeName', 'barcode', 'createdAt', 'updatedAt'])
           && d.text is string && d.text.size() > 0 && d.text.size() <= 120
           && d.checked is bool
           && d.addedBy is string
@@ -66,6 +66,7 @@ service cloud.firestore {
           && (!('addedByName' in d) || (d.addedByName is string && d.addedByName.size() <= 30))
           && (!('checkedBy' in d) || d.checkedBy is string)
           && (!('forMeals' in d) || (d.forMeals is list && d.forMeals.size() <= 10))
+          && (!('barcode' in d) || (d.barcode is string && d.barcode.matches('[0-9]{8,14}')))
           && (!('storeName' in d) || (d.storeName is string && d.storeName.size() <= 80))
           && (!('createdAt' in d) || d.createdAt is timestamp)
           && (!('updatedAt' in d) || d.updatedAt is timestamp);
