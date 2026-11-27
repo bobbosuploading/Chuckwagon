@@ -81,6 +81,7 @@ struct PlanView: View {
                             .font(Theme.body(.subheadline, weight: .semibold))
                     }
                 }
+                AddPlanToListSection(plan: plan)
                 SendToCartSection(plan: plan)
                 ForEach(aisles, id: \.0) { aisle, indices in
                     Section(aisle) {

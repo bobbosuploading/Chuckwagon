@@ -23,6 +23,12 @@ Build 10 (0.1.0)
 - You choose how big a saving is worth an alert (30% to start). We check once a day and send at most one sale alert every 6 days.
 - Try it: switch on a few cuts and the make-it-yourself checks, then tap "See what's on sale now" to see what this week's ads would send you.
 [Sale alerts need a functions deploy (checkSaleWatch callable; sendNotifications runs a daily watch check and writes watchPrices/{storeId}). Kroger price books gain 14 meat and jerky searches, about 14 more API calls per store per run. H-E-B usual prices improve as watchPrices history builds.]
+- New shopping list you can share with your household. Tap the checklist button at the top of the store list. Type anything you need, like milk or paper towels, and tap the circle to check it off.
+- On a meal plan's grocery list, tap "Add to shopping list" to put the plan's items on it. Items already on the list aren't added twice.
+- To share it, sign in with Apple, then tap "Share this list" at the bottom and send the link to your spouse or family. Once they join, you both see one list. Anything either of you adds or checks off shows up on both phones within a second or two.
+- Scan a barcode to add the exact product you buy, brand and size included. On the shopping list, tap the barcode button and point the camera at it, or pick a photo of the barcode. If we can't find the name, type it once and your phone remembers it next time. Try it on a cleaner or snack from your pantry.
+- Try it with someone: share the list, have them open the link on their iPhone and join, then add and check off items on both phones.
+[Needs a Firebase deploy of firestore, functions and hosting (new households rules, startHousehold / householdInviteLink / householdInviteInfo / joinHouseholdInvite / leaveHouseholdList, barcodeProduct, and the /h/ invite links). Until then the list shows an error.]
 
 ========================================
 Build 9 (0.1.0)

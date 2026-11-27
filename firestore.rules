@@ -45,6 +45,40 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow write: if false;
     }
+    // Shared shopping list. Members can read their household (who's in it); only the backend
+    // changes membership (functions/src/households.ts). Members read and write the list directly.
+    match /households/{householdId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.members;
+      allow write: if false;
+
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.members;
+      }
+      function validItem(d) {
+        return d.keys().hasOnly(['text', 'note', 'aisle', 'checked', 'addedBy', 'addedByName', 'checkedBy',
+                                 'forMeals', 'storeName', 'barcode', 'createdAt', 'updatedAt'])
+          && d.text is string && d.text.size() > 0 && d.text.size() <= 120
+          && d.checked is bool
+          && d.addedBy is string
+          && (!('note' in d) || (d.note is string && d.note.size() <= 120))
+          && (!('aisle' in d) || (d.aisle is string && d.aisle.size() <= 40))
+          && (!('addedByName' in d) || (d.addedByName is string && d.addedByName.size() <= 30))
+          && (!('checkedBy' in d) || d.checkedBy is string)
+          && (!('forMeals' in d) || (d.forMeals is list && d.forMeals.size() <= 10))
+          && (!('barcode' in d) || (d.barcode is string && d.barcode.matches('[0-9]{8,14}')))
+          && (!('storeName' in d) || (d.storeName is string && d.storeName.size() <= 80))
+          && (!('createdAt' in d) || d.createdAt is timestamp)
+          && (!('updatedAt' in d) || d.updatedAt is timestamp);
+      }
+      match /items/{itemId} {
+        allow read, delete: if isMember();
+        allow create: if isMember() && validItem(request.resource.data)
+          && request.resource.data.addedBy == request.auth.uid;
+        allow update: if isMember() && validItem(request.resource.data)
+          && request.resource.data.addedBy == resource.data.addedBy;
+      }
+    }
     // Everything else (tester codes, usage counts, run logs) is backend-only.
     match /{document=**} {
       allow read, write: if false;

@@ -27,6 +27,13 @@
         }
       },
       {
+        "source": "/h/**",
+        "function": {
+          "functionId": "sharePage",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/.well-known/apple-app-site-association",
         "function": {
           "functionId": "sharePage",
