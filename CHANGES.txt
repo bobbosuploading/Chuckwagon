@@ -6,6 +6,15 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 10 (0.1.0)
+========================================
+- New shopping list you can share with your household. Tap the checklist button at the top of the store list. Type anything you need, like milk or paper towels, and tap the circle to check it off.
+- On a meal plan's grocery list, tap "Add to shopping list" to put the plan's items on it. Items already on the list aren't added twice.
+- To share it, sign in with Apple, then tap "Share this list" at the bottom and send the link to your spouse or family. Once they join, you both see one list. Anything either of you adds or checks off shows up on both phones within a second or two.
+- Try it with someone: share the list, have them open the link on their iPhone and join, then add and check off items on both phones.
+[Needs a Firebase deploy of firestore, functions and hosting (new households rules, startHousehold / householdInviteLink / householdInviteInfo / joinHouseholdInvite / leaveHouseholdList, and the /h/ invite links). Until then the list shows an error.]
+
+========================================
 Build 9 (0.1.0)
 ========================================
 - When a meal plan can't be made, you now see why in a message right away. Before, the "Rustling up supper" screen flashed and you were sent back to the form with no explanation (the reason was hidden at the very bottom of the form). The reason also stays at the top of the form after you tap OK.

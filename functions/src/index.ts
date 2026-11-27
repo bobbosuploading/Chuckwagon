@@ -14,7 +14,18 @@ import { AdScanError, fixAdScanDates, scanAd, SHOPPER_AD } from "./adScans";
 import { deleteDealImages, sweepOldDealImages } from "./dealImages";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { ShareError, shareDeal, voteSharedDeal } from "./sharedDeals";
-import { appSiteAssociation, MealShareError, SHARE_ID, shareMeals, SharedMeals, sharePageHtml } from "./sharedMeals";
+import { appSiteAssociation, invitePageHtml, MealShareError, SHARE_HOST, SHARE_ID, shareMeals, SharedMeals, sharePageHtml } from "./sharedMeals";
+import {
+  cleanMemberName,
+  createInvite,
+  describeInvite,
+  ensureHousehold,
+  HOUSEHOLD_LIMITS,
+  HouseholdError,
+  INVITE_CODE,
+  joinHousehold,
+  leaveHousehold,
+} from "./households";
 
 initializeApp();
 
@@ -583,6 +594,14 @@ export const sharePage = onRequest({ memory: "256MiB", maxInstances: 5 }, async 
     res.json(appSiteAssociation(teamId));
     return;
   }
+  // Household invite links (/h/{code}): a page that opens the app, or offers the beta.
+  const invite = /^\/h\/([^/]+)\/?$/.exec(req.path);
+  if (invite) {
+    const code = INVITE_CODE.test(invite[1]) ? invite[1] : "";
+    res.set("Cache-Control", "private, max-age=60");
+    res.status(code ? 200 : 404).type("html").send(invitePageHtml(code));
+    return;
+  }
   const match = /^\/m\/([^/]+)\/?$/.exec(req.path);
   const id = match?.[1] ?? "";
   let shared: SharedMeals | null = null;
@@ -593,6 +612,94 @@ export const sharePage = onRequest({ memory: "256MiB", maxInstances: 5 }, async 
   // Shared items never change, so let Hosting's CDN keep them (fewer function runs).
   res.set("Cache-Control", shared ? "public, max-age=600, s-maxage=86400" : "public, max-age=60");
   res.status(shared ? 200 : 404).type("html").send(sharePageHtml(id, shared));
+});
+
+/** Shared shopping list callables need an Apple sign-in, so the household survives a reinstall. */
+function requireAppleUser(request: { auth?: { uid: string; token: Record<string, unknown> } }): string {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const firebase = (request.auth.token.firebase ?? {}) as { identities?: Record<string, unknown> };
+  if (!firebase.identities?.["apple.com"]) {
+    throw new HttpsError("failed-precondition", "Sign in with Apple first (Settings, Account), so your shared list stays with you on any phone.");
+  }
+  return request.auth.uid;
+}
+
+function householdHttpsError(err: unknown): never {
+  if (err instanceof HouseholdError) throw new HttpsError(err.code, err.message);
+  throw err;
+}
+
+/**
+ * Shared shopping list (households.ts): starts the shopper's household (a list of their own) if needed.
+ * Data: { name? } (first name the others see). Returns { householdId, members: [{ uid, name }] }.
+ */
+export const startHousehold = onCall(async (request) => {
+  requireApp(request, "startHousehold");
+  // A list of your own works without Apple sign-in; inviting and joining need it.
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const uid = request.auth.uid;
+  return ensureHousehold(getFirestore(), uid, cleanMemberName(request.data?.name));
+});
+
+/**
+ * A link to join the shopper's household: https://chuckwagon-ebbcc.web.app/h/{code}, good for a week.
+ * Data: { name? }. Returns { code, url, expiresAt }.
+ */
+export const householdInviteLink = onCall(async (request) => {
+  requireApp(request, "householdInviteLink");
+  const uid = requireAppleUser(request);
+  const db = getFirestore();
+  const mine = db.collection("usage").doc(`${uid}_${today()}`);
+  await db.runTransaction(async (tx) => {
+    const m = await tx.get(mine);
+    if (((m.get("householdInvites") as number | undefined) ?? 0) >= HOUSEHOLD_LIMITS.invitesPerUserPerDay) {
+      throw new HttpsError("resource-exhausted", "You've made a lot of invite links today. Try again tomorrow.");
+    }
+    tx.set(mine, { uid, day: today(), householdInvites: FieldValue.increment(1) }, { merge: true });
+  });
+  try {
+    const { code, expiresAt } = await createInvite(db, uid, cleanMemberName(request.data?.name));
+    logger.info("Household invite made", { uid });
+    return { code, url: `https://${SHARE_HOST}/h/${code}`, expiresAt };
+  } catch (err) {
+    householdHttpsError(err);
+  }
+});
+
+/** Who an invite is from, so the app can ask "Join Bobby's list?". Data: { code }. Returns { fromName, members }. */
+export const householdInviteInfo = onCall(async (request) => {
+  requireApp(request, "householdInviteInfo");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const code = String(request.data?.code ?? "");
+  if (!INVITE_CODE.test(code)) throw new HttpsError("invalid-argument", "That invite link isn't valid.");
+  try {
+    return await describeInvite(getFirestore(), code);
+  } catch (err) {
+    householdHttpsError(err);
+  }
+});
+
+/** Joins a household from an invite. Data: { code, name? }. Returns { householdId, members }. */
+export const joinHouseholdInvite = onCall(async (request) => {
+  requireApp(request, "joinHouseholdInvite");
+  const uid = requireAppleUser(request);
+  const code = String(request.data?.code ?? "");
+  if (!INVITE_CODE.test(code)) throw new HttpsError("invalid-argument", "That invite link isn't valid.");
+  try {
+    const joined = await joinHousehold(getFirestore(), uid, code, cleanMemberName(request.data?.name));
+    logger.info("Joined household", { uid, householdId: joined.householdId, members: joined.members.length });
+    return joined;
+  } catch (err) {
+    householdHttpsError(err);
+  }
+});
+
+/** Leaves the shopper's household. The last one out removes the list. */
+export const leaveHouseholdList = onCall(async (request) => {
+  requireApp(request, "leaveHouseholdList");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  await leaveHousehold(getFirestore(), request.auth.uid);
+  return { ok: true };
 });
 
 /**

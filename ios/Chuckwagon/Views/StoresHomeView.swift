@@ -6,6 +6,7 @@ import SwiftUI
 struct StoresHomeView: View {
     @Environment(Preferences.self) private var prefs
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(HouseholdList.self) private var householdList
     @State private var stores: [Store] = []
     @State private var loading = true
     @State private var error: String?
@@ -16,6 +17,7 @@ struct StoresHomeView: View {
     @State private var showingPlans = false
     @State private var showingPlanTrip = false
     @State private var showingScan = false
+    @State private var showingList = false
     /// A deal shared from another app, waiting to be finished (ShareInbox).
     @State private var inboxShare: HomeView.InboxShare?
 
@@ -60,6 +62,10 @@ struct StoresHomeView: View {
             .navigationTitle(prefs.zip.isEmpty ? "" : "Stores near you")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showingList = true } label: {
+                        Label("Shopping list", systemImage: householdList.isShared ? "checklist.checked" : "checklist")
+                    }
+                    .accessibilityValue(householdList.uncheckedCount > 0 ? "\(householdList.uncheckedCount) items" : "")
                     Button { showingPlans = true } label: { Label("My plans", systemImage: "list.bullet.clipboard") }
                     Button { showingSettings = true } label: { Label("Settings", systemImage: "slider.horizontal.3") }
                 }
@@ -91,6 +97,7 @@ struct StoresHomeView: View {
                 HomeView(storeId: id)
             }
             .sheet(isPresented: $showingPlans, onDismiss: { checkInbox() }) { MyPlansView() }
+            .sheet(isPresented: $showingList, onDismiss: { checkInbox() }) { SharedListView() }
             .sheet(isPresented: $showingPlanTrip, onDismiss: { checkInbox() }) { PlanTripView(stores: stores) }
             .sheet(isPresented: $showingScan, onDismiss: { Task { await loadStores() }; checkInbox() }) {
                 // Starts on the closest starred store (or closest store); any nearby store can be picked.
@@ -339,7 +346,7 @@ struct StoresHomeView: View {
     /// Opens a deal shared from another app, once the stores are loaded. Only while this list is
     /// showing with nothing on top of it; the deals screen checks the inbox itself.
     private func checkInbox() {
-        guard inboxShare == nil, path.isEmpty, !showingSettings, !showingPlans, !showingPlanTrip, !myStores.isEmpty, let next = ShareInbox.next() else { return }
+        guard inboxShare == nil, path.isEmpty, !showingSettings, !showingPlans, !showingPlanTrip, !showingList, !myStores.isEmpty, let next = ShareInbox.next() else { return }
         inboxShare = HomeView.InboxShare(item: next.item, image: next.image)
     }
 }

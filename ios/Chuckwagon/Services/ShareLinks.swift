@@ -32,8 +32,29 @@ enum ShareLinks {
         } else {
             id = nil
         }
-        guard let id, id.count == 10, id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
+        guard let id, isCode(id) else { return nil }
         return id
+    }
+
+    /// The invite code, if this URL is a link to join a household's shared shopping list:
+    /// https://chuckwagon-ebbcc.web.app/h/{code} or chuckwagon://h/{code} (functions/src/households.ts).
+    static func inviteCode(from url: URL) -> String? {
+        let parts = url.pathComponents.filter { $0 != "/" }
+        let code: String?
+        if let scheme = url.scheme?.lowercased(), schemes.contains(scheme) {
+            code = url.host == "h" ? parts.first : nil
+        } else if url.host?.lowercased() == host, parts.count == 2, parts[0] == "h" {
+            code = parts[1]
+        } else {
+            code = nil
+        }
+        guard let code, isCode(code) else { return nil }
+        return code
+    }
+
+    /// Share ids and invite codes: 10 letters and digits.
+    private static func isCode(_ s: String) -> Bool {
+        s.count == 10 && s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
     }
 }
 

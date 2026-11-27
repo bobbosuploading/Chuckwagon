@@ -258,9 +258,60 @@ export function appSiteAssociation(teamId: string) {
       details: [
         {
           appIDs: [`${teamId}.com.bobby.chuckwagon`, `${teamId}.com.bobby.chuckwagon.dev`],
-          components: [{ "/": "/m/*", comment: "Shared meals and plans" }],
+          components: [
+            { "/": "/m/*", comment: "Shared meals and plans" },
+            { "/": "/h/*", comment: "Invites to a household's shared shopping list" },
+          ],
         },
       ],
     },
   };
+}
+
+/**
+ * The page behind a household invite link (/h/{code}) for phones without the app, or when iOS
+ * opens Safari anyway. It never shows who sent it or what's on the list: the app asks after sign-in.
+ */
+export function invitePageHtml(code: string): string {
+  const title = code ? "You're invited to a shared shopping list" : "This invite link isn't valid";
+  const body = code
+    ? "Someone in your household wants to share their Chuckwagon grocery list with you. Open it in Chuckwagon to join. You'll both see one list, and anything either of you adds or checks off shows up on both phones."
+    : "Ask the person who sent it for a new invite.";
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)} · Chuckwagon</title>
+<meta property="og:title" content="Join my Chuckwagon shopping list">
+<meta property="og:description" content="One grocery list for the whole household. Add items and check them off together.">
+<meta property="og:site_name" content="Chuckwagon">
+<meta name="robots" content="noindex">
+<style>
+  :root { --cream: #FBF4E6; --ink: #2B2118; --red: #C8402F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cream); color: var(--ink); font: 17px/1.45 -apple-system, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 28px; margin: 4px 0 8px; }
+  .brand { color: var(--red); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; font-size: 13px; }
+  .meta { opacity: .65; font-size: 15px; }
+  .buttons { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
+  .btn { display: block; text-align: center; padding: 14px; border-radius: 14px; font-weight: 700; text-decoration: none; }
+  .primary { background: var(--red); color: #fff; }
+  .secondary { background: #fff; color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">Chuckwagon</div>
+  <h1>${esc(title)}</h1>
+  <p>${esc(body)}</p>
+  <div class="buttons">
+    ${code ? `<a class="btn primary" href="${APP_SCHEME}://h/${esc(code)}">Open in Chuckwagon</a>` : ""}
+    <a class="btn secondary" href="${TESTFLIGHT_URL}">Get Chuckwagon (free beta)</a>
+  </div>
+  ${code ? '<p class="meta">Don\'t have Chuckwagon yet? Get the beta, then come back and tap this link again.</p>' : ""}
+</main>
+</body>
+</html>`;
 }
