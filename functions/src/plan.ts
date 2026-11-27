@@ -16,6 +16,7 @@ import { ItemPrice, MATCH_MODEL, priceRegularItems } from "./priceItems";
 import { liveSharedDeals } from "./sharedDeals";
 import { MealStreamReader, PlanProgress } from "./planProgress";
 import { dislikedMealsFrom, dislikedMealsText } from "./dislikedMeals";
+import { type MealNote, mealNotesFrom, mealNotesText } from "./mealNotes";
 
 /** Everyday plans use Haiku (about half a cent each); premium plans use Opus (about 17 cents). */
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -67,6 +68,11 @@ export interface PlanRequest {
    * backend from the shopper's account, never taken from the app. Cleaned by dislikedMealsFrom.
    */
   dislikedMeals?: string[];
+  /**
+   * The shopper's own notes on meals (users/{uid}.mealNotes). Filled in by the backend from the
+   * shopper's account, never taken from the app, and not saved with the plan. Cleaned by mealNotesFrom.
+   */
+  mealNotes?: MealNote[];
 }
 
 /** Longest mood and per-night theme the planner takes. */
@@ -646,11 +652,14 @@ export async function planMeals(
   const nightThemes = cleanNightThemes(req.nightThemes, mealCount);
   // Save the cleaned themes with the plan, not what was sent.
   const dislikedMeals = dislikedMealsFrom(req.dislikedMeals);
+  const mealNotes = mealNotesFrom(req.mealNotes);
   req = {
     ...req,
     theme: theme || undefined,
     nightThemes: nightThemes.length ? nightThemes : undefined,
     dislikedMeals: dislikedMeals.length ? dislikedMeals : undefined,
+    // Private notes stay on the shopper's account; they go into the prompt but not the saved plan.
+    mealNotes: undefined,
   };
   const budget =
     req.budget && req.budget >= BUDGET_RANGE.min && req.budget <= BUDGET_RANGE.max ? round2(req.budget) : undefined;
@@ -722,7 +731,7 @@ MAX COOK TIME: ${req.maxCookMinutes ?? 45} minutes
 DIET: ${req.diet || "none"}
 ALLERGIES: ${req.allergies || "none"}
 DISLIKES: ${req.dislikes || "none"}
-${dislikedMealsText(dislikedMeals)}HAVE AT HOME: ${req.haveAtHome || "salt, pepper, cooking oil, basic spices"}
+${dislikedMealsText(dislikedMeals)}${mealNotesText(mealNotes, includeMeals.map((m) => m.name))}HAVE AT HOME: ${req.haveAtHome || "salt, pepper, cooking oil, basic spices"}
 BUDGET: ${budget ? `$${budget} for the whole list (aim for about $${Math.floor(budget * BUDGET_AIM)} to leave room for price surprises)` : "none"}
 ${themesText(theme, nightThemes, includeMeals.length)}${includeMeals.length ? `\nMEALS TO INCLUDE (${includeMeals.length} of the ${mealCount} main meals):\n${includeMealsText(includeMeals)}\n` : ""}
 SALE ITEMS:
