@@ -8,6 +8,12 @@ it goes up, add a new "Build N" section at the top of this list.
 ========================================
 Build 10 (0.1.0)
 ========================================
+- Add your own notes to any recipe. Open a meal and tap "Add a note" under "Cook's notes" to write down what you changed to make it better, like "used twice the garlic" or "10 more minutes in the oven". Only you can see your notes.
+- Your note shows under the meal's name whenever that meal comes up again: in new plans, in My plans, and in "Pick saved meals".
+- New plans read your notes too, so a meal you've noted should come back cooked your way. Notes never override your allergies or diet.
+- See, edit or delete all your notes in Settings, under Food: "Cook's notes".
+- Try it: add a note to a meal, make it a Keeper, then start a new plan, tap "Pick saved meals", pick that meal, and check the new recipe follows your note.
+[Needs a functions deploy (new saveMealNote callable; planMealsForStore reads users/{uid}.mealNotes and adds up to 12 notes to the prompt only when there are any).]
 - Notifications, if you want them. In Settings, under Notifications, you can turn on "New deals at my stores" to hear when a new weekly ad is in at your starred stores (or the three closest, if you haven't starred any). You can also pick a day and time for a weekly "time to plan this week's suppers" reminder.
 - Both are off until you turn them on, and you'll get at most one deals alert and one reminder a week. iPhone asks once if Chuckwagon may send notifications.
 - Try it: turn one on, tap "Send a test notification", and check it shows up. Set the reminder for later today and check it comes at that hour. Deals alerts come the next time a store's weekly ad loads, during the day.
