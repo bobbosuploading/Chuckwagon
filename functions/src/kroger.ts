@@ -103,4 +103,10 @@ export class KrogerClient {
       throw err;
     }
   }
+
+  /** Product search with no store, for matching a barcode. */
+  async searchProductsAnywhere(term: string, limit: number): Promise<KrogerProduct[]> {
+    const json = await this.get<{ data?: KrogerProduct[] }>("/products", { "filter.term": term, "filter.limit": limit });
+    return json.data ?? [];
+  }
 }
