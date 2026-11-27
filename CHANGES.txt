@@ -6,6 +6,12 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 13 (0.1.0)
+========================================
+- Links to the Chuckwagon website (like the Features page) now open in Safari. Before, they opened the app and left you on the store list.
+[Website links fix: app hands non-share links to Safari; apple-app-site-association now excludes everything but /m/ and /h/ (functions deploy).]
+
+========================================
 Build 12 (0.1.0)
 ========================================
 - New "On hand" list for food you already have. Open the shopping list and tap "On hand at home". Type what's in your fridge, freezer and pantry (with how much, like 3 lb), or tap the barcode button to scan it. It's shared with your household, just like the shopping list.
