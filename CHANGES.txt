@@ -9,6 +9,7 @@ it goes up, add a new "Build N" section at the top of this list.
 Build 13 (0.1.0)
 ========================================
 - Links to the Chuckwagon website (like the Features page) now open in Safari. Before, they opened the app and left you on the store list.
+- Adding or editing a Cook's note on a recipe works again. The note box no longer closes a moment after it opens.
 [Website links fix: app hands non-share links to Safari; apple-app-site-association now excludes everything but /m/ and /h/ (functions deploy).]
 
 ========================================

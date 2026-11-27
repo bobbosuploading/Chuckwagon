@@ -28,10 +28,13 @@ struct MealNoteLine: View {
 }
 
 /// The "Cook's notes" section in a recipe: the shopper's note, and a button to add or edit it.
+/// The recipe screen opens the editor (see `mealNoteEditor`). A sheet attached to a section
+/// inside a List closes on its own when the List redraws that row, which is what made the
+/// editor vanish a moment after it opened.
 struct MealNoteSection: View {
     let name: String
+    let onEdit: () -> Void
     @Environment(MealRatings.self) private var ratings
-    @State private var editing = false
 
     var body: some View {
         let note = ratings.note(for: name)
@@ -42,9 +45,7 @@ struct MealNoteSection: View {
                     .foregroundStyle(Theme.ink)
                     .textSelection(.enabled)
             }
-            Button {
-                editing = true
-            } label: {
+            Button(action: onEdit) {
                 Label(note == nil ? MealNoteWords.add : MealNoteWords.edit,
                       systemImage: note == nil ? "plus.circle" : MealNoteWords.icon)
             }
@@ -53,7 +54,14 @@ struct MealNoteSection: View {
         } footer: {
             Text(MealNoteWords.hint)
         }
-        .sheet(isPresented: $editing) {
+    }
+}
+
+extension View {
+    /// Shows the note editor for a meal while `isPresented` is true. Attach it to the whole
+    /// screen (the List), never to a row or section inside it.
+    func mealNoteEditor(name: String, isPresented: Binding<Bool>) -> some View {
+        sheet(isPresented: isPresented) {
             MealNoteEditor(name: name)
         }
     }
