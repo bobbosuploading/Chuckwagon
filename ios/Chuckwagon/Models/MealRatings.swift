@@ -24,6 +24,20 @@ enum MealRatingWords {
     static let dislikeColor = Theme.red
 }
 
+/// The shopper's own note on a meal ("used twice the garlic"). Private to them, saved on their
+/// account (users/{uid}.mealNotes, written only by the backend), and shown wherever the meal turns up.
+struct MealNote: Hashable {
+    var name: String
+    var note: String
+
+    static func list(from raw: Any?) -> [MealNote] {
+        (raw as? [[String: Any]] ?? []).compactMap { item in
+            guard let name = item["name"] as? String, let note = item["note"] as? String, !note.isEmpty else { return nil }
+            return MealNote(name: name, note: note)
+        }
+    }
+}
+
 /// Meals the shopper rated: Keepers (liked, saved with their recipes so the saved-meal picker
 /// can show them first) and meals fed to the dogs (disliked, so new plans skip them). Both live
 /// on the shopper's account (users/{uid}.likedMeals and .dislikedMeals, written only by the
@@ -41,6 +55,13 @@ final class MealRatings {
     private(set) var loaded = false
     /// The meal being saved right now, so its button can show a spinner.
     private(set) var saving: String?
+    /// The shopper's notes on meals, oldest first.
+    private(set) var notes: [MealNote] = []
+    /// The meal whose note is being saved right now.
+    private(set) var savingNote: String?
+    /// The backend keeps this many notes, each up to this long (MAX_MEAL_NOTES / MAX_NOTE_LENGTH).
+    static let maxNotes = 100
+    static let maxNoteLength = 500
 
     /// Names match loosely (case, spacing and punctuation don't count), since the backend
     /// cleans names before saving them.
@@ -58,7 +79,27 @@ final class MealRatings {
         return liked.contains { Self.key($0.name) == k }
     }
 
-    /// Reads both lists once (or again with force), after sign-in.
+    /// The shopper's note on a meal, if they wrote one.
+    func note(for name: String) -> String? {
+        let k = Self.key(name)
+        return notes.last { Self.key($0.name) == k }?.note
+    }
+
+    /// Saves a note on a meal (an empty note deletes it). Returns nil when it saved, or a message to show.
+    @discardableResult
+    func setNote(_ name: String, _ note: String) async -> String? {
+        guard savingNote == nil else { return "Still saving the last note. Try again in a moment." }
+        savingNote = name
+        defer { savingNote = nil }
+        do {
+            notes = try await Backend.saveMealNote(name: name, note: note.trimmingCharacters(in: .whitespacesAndNewlines))
+            return nil
+        } catch {
+            return Backend.friendlyMessage(for: error)
+        }
+    }
+
+    /// Reads both lists and the notes once (or again with force), after sign-in.
     func load(force: Bool = false) async {
         guard force || !loaded else { return }
         if let ratings = try? await Backend.mealRatings() {
@@ -101,6 +142,7 @@ final class MealRatings {
     private func apply(_ ratings: Backend.MealRatingsData) {
         disliked = ratings.disliked
         liked = ratings.liked
+        if let notes = ratings.notes { self.notes = notes }
         loaded = true
     }
 }

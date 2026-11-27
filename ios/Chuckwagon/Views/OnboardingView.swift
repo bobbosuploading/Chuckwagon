@@ -87,10 +87,15 @@ struct PreferencesForm: View {
                 } label: {
                     LabeledContent(MealRatingWords.dislikedList, value: ratings.disliked.isEmpty ? "None" : "\(ratings.disliked.count)")
                 }
+                NavigationLink {
+                    MealNotesView()
+                } label: {
+                    LabeledContent(MealNoteWords.title, value: ratings.notes.isEmpty ? "None" : "\(ratings.notes.count)")
+                }
             } header: {
                 Text("Food")
             } footer: {
-                Text("Allergies are never included in any meal. In a plan, swipe right on a meal to make it a \(MealRatingWords.like), or swipe left to feed it to the dogs so new plans stop suggesting it.")
+                Text("Allergies are never included in any meal. In a plan, swipe right on a meal to make it a \(MealRatingWords.like), or swipe left to feed it to the dogs so new plans stop suggesting it. Open a meal to add your own \(MealNoteWords.title.lowercased()).")
             }
         }
         .creamBackground()
