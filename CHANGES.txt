@@ -18,7 +18,6 @@ Build 10 (0.1.0)
 - Both are off until you turn them on, and you'll get at most one deals alert and one reminder a week. iPhone asks once if Chuckwagon may send notifications.
 - Try it: turn one on, tap "Send a test notification", and check it shows up. Set the reminder for later today and check it comes at that hour. Deals alerts come the next time a store's weekly ad loads, during the day.
 [Needs the Apple push key uploaded in the Firebase console (Project settings > Cloud Messaging) and a deploy of firestore and functions (saveNotificationSettings, sendTestNotification, hourly sendNotifications, new deals index on storeId + validTo).]
-
 - Sale alerts. In Settings, under Notifications, tap "Sale alerts" to pick cuts to watch (pork belly, brisket, ribs, pork butt, chuck roast and more) or type in anything of your own, like toilet paper. You'll hear when one goes on a big sale compared with its usual price.
 - Make it yourself: switch on homemade bacon, ground beef or beef jerky, and we'll tell you when a cut on sale makes it cheaper to make your own than to buy it, after trim and drying. Ground beef checks chuck, brisket, sirloin and round and picks the cheapest.
 - You choose how big a saving is worth an alert (30% to start). We check once a day and send at most one sale alert every 6 days.
