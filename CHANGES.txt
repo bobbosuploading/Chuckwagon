@@ -23,6 +23,8 @@ Also in this build (from build 11, which wasn't uploaded on its own):
 - Your iPhone no longer locks while the shopping list, a meal plan or a recipe is open, so you don't have to unlock it with your hands full. Choose how long in Settings, under "Shopping and cooking": off, 30 minutes (the default), 1 hour, or as long as it's open.
 - The keyboard on the shopping list goes away when you scroll, tap "Done" above it, check off an item, or tap return in an empty box. With an item typed, return adds it and keeps the keyboard up for the next one.
 - "Stock up" tips from a meal plan (like "Freezes well. Buy extra") now come along when you tap "Add to shopping list".
+- Links to the Chuckwagon website (like the Features page) now open in Safari. Before, they opened the app and left you on the store list.
+[Website links fix: app hands non-share links to Safari; apple-app-site-association now excludes everything but /m/ and /h/ (functions deploy).]
 [The lookup fix is in functions (barcodeProduct): needs a functions deploy, and works on build 10 too.]
 [Stock-up tips need the new firestore rules deployed before build 11 is used, or "Add to shopping list" is refused.]
 [Needs a deploy of firestore and functions (new households/{id}/onHand rules; planMealsForStore reads onHand, useUp, storeTrip, cheapest, longCooks, longCookHow; joining a household carries the on-hand list).]

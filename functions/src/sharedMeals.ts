@@ -261,6 +261,7 @@ export function appSiteAssociation(teamId: string) {
           components: [
             { "/": "/m/*", comment: "Shared meals and plans" },
             { "/": "/h/*", comment: "Invites to a household's shared shopping list" },
+            { "/": "*", exclude: true, comment: "Website pages (/, /features, /privacy) open in Safari" },
           ],
         },
       ],

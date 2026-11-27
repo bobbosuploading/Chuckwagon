@@ -90,7 +90,13 @@ extension RootView {
             if openedInvite?.id != code { openedInvite = OpenedShare(id: code) }
             return
         }
-        guard let id = ShareLinks.sharedId(from: url), openedShare?.id != id else { return }
+        guard let id = ShareLinks.sharedId(from: url) else {
+            // Any other web link to our site (like /features) is a website page, not something the
+            // app shows. Hand it to Safari instead of leaving the person on the store list.
+            if url.scheme == "https" { UIApplication.shared.open(url) }
+            return
+        }
+        guard openedShare?.id != id else { return }
         openedShare = OpenedShare(id: id)
     }
 }
