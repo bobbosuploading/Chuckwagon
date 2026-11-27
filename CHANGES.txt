@@ -15,11 +15,7 @@ Build 12 (0.1.0)
 - Cheapest possible. Under "Plan style", turn it on for the lowest cost per meal, even if the meals are simple. Only your diet and allergies count; moods and dislikes are skipped.
 - Long cooks. Under "Plan style", add 1 or 2 low-and-slow meals like smoked ribs, smoked chicken, brisket or pulled pork, and pick smoker, slow cooker or either. They're marked "Long cook, best on a weekend", with times and when to start, and leftover meat often turns into another meal.
 - Try it: add a few things to On hand, mark one with the flame, then build a plan with "Cook from what I have" and "No trip". Then try "Few items", and a normal plan with 1 long cook on the smoker.
-[Needs a deploy of firestore and functions (new households/{id}/onHand rules; planMealsForStore reads onHand, useUp, storeTrip, cheapest, longCooks, longCookHow; joining a household carries the on-hand list). Built on PR #57, so merge #57 first.]
-
-========================================
-Build 11 (0.1.0)
-========================================
+Also in this build (from build 11, which wasn't uploaded on its own):
 - The barcode scanner on the shopping list should now read barcodes. In build 10 it could show the camera without picking anything up. You'll feel a tap when it catches one. Hold the phone steady a few inches away. On a round bottle, turn it so the bars face you flat.
 - Camera won't read it? Type the numbers printed under the barcode instead and tap "Look up", or pick a photo of it.
 - Barcodes the app read but couldn't name (like some household cleaners) are looked up in more places now. Scan the same item again to check.
@@ -29,6 +25,12 @@ Build 11 (0.1.0)
 - "Stock up" tips from a meal plan (like "Freezes well. Buy extra") now come along when you tap "Add to shopping list".
 [The lookup fix is in functions (barcodeProduct): needs a functions deploy, and works on build 10 too.]
 [Stock-up tips need the new firestore rules deployed before build 11 is used, or "Add to shopping list" is refused.]
+[Needs a deploy of firestore and functions (new households/{id}/onHand rules; planMealsForStore reads onHand, useUp, storeTrip, cheapest, longCooks, longCookHow; joining a household carries the on-hand list).]
+
+========================================
+Build 11 (0.1.0)
+========================================
+[Not uploaded on its own. Its changes are listed under build 12.]
 
 ========================================
 Build 10 (0.1.0)
