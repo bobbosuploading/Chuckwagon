@@ -35,7 +35,7 @@ struct SharedListView: View {
                     HStack {
                         TextField("Add an item, like milk or paper towels", text: $newItem)
                             .focused($adding)
-                            .submitLabel(.done)
+                            .submitLabel(newItem.isEmpty ? .done : .next)
                             .onSubmit { addTyped() }
                         Button { addTyped() } label: {
                             Image(systemName: "plus.circle.fill").font(.title2)
@@ -85,6 +85,9 @@ struct SharedListView: View {
                 HouseholdSection()
             }
             .creamBackground()
+            .scrollDismissesKeyboard(.immediately)
+            .keyboardDoneButton()
+            .keepsScreenAwake()
             .font(Theme.body())
             .foregroundStyle(Theme.ink)
             .navigationTitle("Shopping list")
@@ -102,6 +105,7 @@ struct SharedListView: View {
     private func row(_ item: HouseholdList.Item) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Button {
+                adding = false
                 list.setChecked(item, !item.checked)
             } label: {
                 Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
@@ -120,6 +124,9 @@ struct SharedListView: View {
                         .foregroundStyle(item.checked ? .secondary : .primary)
                     if let detail = detail(item) {
                         Text(detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let tip = item.stockUp, !item.checked {
+                        StockUpNote(tip: tip)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -150,6 +157,12 @@ struct SharedListView: View {
 
     private func addTyped() {
         let text = newItem
+        // Return on an empty box puts the keyboard away; with an item it adds it and stays
+        // ready for the next one.
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
+            adding = false
+            return
+        }
         newItem = ""
         adding = true
         Task {
@@ -162,6 +175,7 @@ struct SharedListView: View {
             }
         }
     }
+
 }
 
 /// Change an item's name or note ("2 lb", "the big jar").
@@ -393,6 +407,8 @@ struct JoinHouseholdView: View {
                     }
                 }
                 .creamBackground()
+                .scrollDismissesKeyboard(.interactively)
+                .keyboardDoneButton()
                 .navigationTitle("Shared shopping list")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { Button("Not now") { dismiss() } }

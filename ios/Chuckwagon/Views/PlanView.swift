@@ -134,6 +134,8 @@ struct PlanView: View {
             }
         }
         .creamBackground()
+        // Shopping from the plan's list: don't let the phone lock (Settings > Shopping and cooking).
+        .keepsScreenAwake()
         // Share the plan (its picked meals and grocery list) by link.
         .mealSharing(planId: plan.id, meal: nil)
         // Meal rows and recipes read each meal's nutrition from here.
@@ -577,6 +579,8 @@ struct MealDetailView: View {
             }
         }
         .creamBackground()
+        // Cooking from the recipe: don't let the phone lock.
+        .keepsScreenAwake()
         .mealSharing(planId: planId, meal: meal.name)
         .navigationTitle(meal.name)
         .navigationBarTitleDisplayMode(.inline)

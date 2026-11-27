@@ -41,6 +41,7 @@ struct BarcodeScanView: View {
                 }
             }
             .background(Theme.cream.ignoresSafeArea())
+            .keyboardDoneButton()
             .navigationTitle("Scan a barcode")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Done") { dismiss() } }
