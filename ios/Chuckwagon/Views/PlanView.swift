@@ -512,6 +512,7 @@ struct MealDetailView: View {
     @Environment(\.mealMacros) private var mealMacros
     @Environment(MealRatings.self) private var ratings
     @State private var ratingError: String?
+    @State private var editingNote = false
 
     private var liked: Bool { ratings.isLiked(meal.name) }
     private var disliked: Bool { ratings.isDisliked(meal.name) }
@@ -556,7 +557,7 @@ struct MealDetailView: View {
                     }
                 }
             }
-            MealNoteSection(name: meal.name)
+            MealNoteSection(name: meal.name) { editingNote = true }
             Section {
                 Button {
                     Task { ratingError = await ratings.setLiked(meal, !liked) }
@@ -597,6 +598,7 @@ struct MealDetailView: View {
             }
         }
         .creamBackground()
+        .mealNoteEditor(name: meal.name, isPresented: $editingNote)
         // Cooking from the recipe: don't let the phone lock.
         .keepsScreenAwake()
         .mealSharing(planId: planId, meal: meal.name)
