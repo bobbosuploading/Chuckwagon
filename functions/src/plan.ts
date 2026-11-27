@@ -75,6 +75,17 @@ export interface PlanRequest {
   mealNotes?: MealNote[];
 }
 
+/**
+ * None of the chosen stores has a sale that's still running, usually because a weekly ad just
+ * ended and the next one isn't loaded yet. The function tells the shopper so instead of a server error.
+ */
+export class NoDealsError extends Error {
+  constructor(readonly storeIds: string[], readonly storeNames: string[]) {
+    super(`No current deals for ${storeIds.join(", ")}`);
+    this.name = "NoDealsError";
+  }
+}
+
 /** Longest mood and per-night theme the planner takes. */
 export const MAX_THEME_LENGTH = 80;
 export const MAX_NIGHT_THEME_LENGTH = 40;
@@ -716,7 +727,7 @@ export async function planMeals(
         dealDocIds.set(key, `shared_${sharedId}`);
       });
   }
-  if (deals.size === 0) throw new Error(`No current deals for ${storeIds.join(", ")}`);
+  if (deals.size === 0) throw new NoDealsError(storeIds, [...new Set(storeIds.map((id) => storeNames.get(id) || "this store"))]);
   const timingsMs: Record<string, number> = { loadDeals: Date.now() - started };
   let drafts = 0;
 
