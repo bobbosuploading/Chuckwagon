@@ -23,6 +23,6 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Give back today's failed plans
-        run: node ../.github/diag/refund.js
+        run: cp ../.github/diag/refund.js refund-once.js && node refund-once.js
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
