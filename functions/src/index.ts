@@ -5,7 +5,7 @@ import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { requireApp } from "./appCheck";
 import Anthropic from "@anthropic-ai/sdk";
-import { chooseMeals, MealPlan, planMeals, PlanRequest } from "./plan";
+import { chooseMeals, MealPlan, NoDealsError, planMeals, PlanRequest } from "./plan";
 import type { PlanProgress } from "./planProgress";
 import { cleanMealName, dislikedMealsFrom, saveMealDisliked } from "./dislikedMeals";
 import { saveMealLiked } from "./likedMeals";
@@ -56,13 +56,21 @@ function today(): string {
  * Counts this request against the daily limits, or refuses it.
  * Premium is allowed only when users/{uid}.premium is true (set by the backend, never the app).
  */
-async function reservePlan(db: Firestore, uid: string, premium: boolean): Promise<void> {
+/** What reservePlan counted, so a plan that fails can give it back (releasePlan). */
+interface PlanReservation {
+  uid: string;
+  day: string;
+  premium: boolean;
+  usedCredit: boolean;
+}
+
+async function reservePlan(db: Firestore, uid: string, premium: boolean): Promise<PlanReservation> {
   const day = today();
   const userRef = db.collection("users").doc(uid);
   const mine = db.collection("usage").doc(`${uid}_${day}`);
   const everyone = db.collection("usage").doc(`all_${day}`);
   const month = db.collection("usage").doc(`${uid}_${day.slice(0, 7)}`);
-  await db.runTransaction(async (tx) => {
+  return db.runTransaction(async (tx) => {
     const [user, m, e, mo] = await Promise.all([tx.get(userRef), tx.get(mine), tx.get(everyone), tx.get(month)]);
     // Non-premium shoppers can use a free Chef's pick earned by scanning receipts.
     const credits = (user.get("chefPickCredits") as number | undefined) ?? 0;
@@ -88,7 +96,25 @@ async function reservePlan(db: Firestore, uid: string, premium: boolean): Promis
     if (premium) tx.set(month, { uid, month: day.slice(0, 7), premium: FieldValue.increment(1) }, { merge: true });
     else tx.set(mine, { uid, day, free: FieldValue.increment(1) }, { merge: true });
     tx.set(everyone, { day, total: FieldValue.increment(1) }, { merge: true });
+    return { uid, day, premium, usedCredit: useCredit };
   });
+}
+
+/**
+ * Gives back what reservePlan counted when the plan fails, so a shopper isn't charged one of
+ * their daily plans (or a Chef's pick) for our error. Never throws.
+ */
+async function releasePlan(db: Firestore, r: PlanReservation): Promise<void> {
+  try {
+    const batch = db.batch();
+    if (r.usedCredit) batch.set(db.collection("users").doc(r.uid), { chefPickCredits: FieldValue.increment(1) }, { merge: true });
+    if (r.premium) batch.set(db.collection("usage").doc(`${r.uid}_${r.day.slice(0, 7)}`), { premium: FieldValue.increment(-1) }, { merge: true });
+    else batch.set(db.collection("usage").doc(`${r.uid}_${r.day}`), { free: FieldValue.increment(-1) }, { merge: true });
+    batch.set(db.collection("usage").doc(`all_${r.day}`), { total: FieldValue.increment(-1) }, { merge: true });
+    await batch.commit();
+  } catch (err) {
+    logger.warn("Couldn't give back a failed plan", err);
+  }
 }
 
 /** During testing, deals are collected for at most this many areas (ZIP codes). */
@@ -170,7 +196,7 @@ export const planMealsForStore = onCall(
     if (!data?.storeId) throw new HttpsError("invalid-argument", "storeId is required");
     const db = getFirestore();
     const uid = request.auth.uid;
-    await reservePlan(db, uid, data.premium === true);
+    const reservation = await reservePlan(db, uid, data.premium === true);
     // Live progress the app watches while it waits (planProgress/{progressId}, readable only by
     // this user). Writes go one at a time, in order, and never hold up or fail the plan.
     const progressId = typeof data.progressId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(data.progressId) ? data.progressId : null;
@@ -198,6 +224,16 @@ export const planMealsForStore = onCall(
       logger.info("Plan created", { id: ref.id, model: plan.model, usage: plan.usage });
       return { id: ref.id, ...plan };
     } catch (err) {
+      // A failed plan doesn't count toward the shopper's limits.
+      await releasePlan(db, reservation);
+      if (err instanceof NoDealsError) {
+        logger.warn("Plan skipped: no current deals", { storeIds: err.storeIds });
+        const names = err.storeNames.join(" or ");
+        throw new HttpsError(
+          "failed-precondition",
+          `${names} has no sales loaded right now. A new weekly ad usually shows up within a day. Try another store, or check back later. This didn't count toward today's plans.`
+        );
+      }
       logger.error("Plan failed", err);
       throw new HttpsError("internal", "We couldn't make that plan just now. Please try again in a minute.");
     } finally {
