@@ -161,6 +161,7 @@ struct SavedMealPicker: View {
                     Text("\(meal.timeMinutes) min · \(meal.ingredients.count) ingredients")
                         .font(Theme.body(.caption))
                         .foregroundStyle(Theme.ink.opacity(0.6))
+                    MealNoteLine(name: meal.name, lines: 1)
                 }
                 Spacer()
                 if ratings.saving == meal.name {

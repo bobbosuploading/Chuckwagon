@@ -389,6 +389,7 @@ struct MealSummary: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             MealRatingBadge(name: meal.name)
+            MealNoteLine(name: meal.name)
         }
     }
 }
@@ -535,6 +536,7 @@ struct MealDetailView: View {
                     }
                 }
             }
+            MealNoteSection(name: meal.name)
             Section {
                 Button {
                     Task { ratingError = await ratings.setLiked(meal, !liked) }

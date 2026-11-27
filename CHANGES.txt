@@ -8,6 +8,12 @@ it goes up, add a new "Build N" section at the top of this list.
 ========================================
 Build 10 (0.1.0)
 ========================================
+- Add your own notes to any recipe. Open a meal and tap "Add a note" under "Cook's notes" to write down what you changed to make it better, like "used twice the garlic" or "10 more minutes in the oven". Only you can see your notes.
+- Your note shows under the meal's name whenever that meal comes up again: in new plans, in My plans, and in "Pick saved meals".
+- New plans read your notes too, so a meal you've noted should come back cooked your way. Notes never override your allergies or diet.
+- See, edit or delete all your notes in Settings, under Food: "Cook's notes".
+- Try it: add a note to a meal, make it a Keeper, then start a new plan, tap "Pick saved meals", pick that meal, and check the new recipe follows your note.
+[Needs a functions deploy (new saveMealNote callable; planMealsForStore reads users/{uid}.mealNotes and adds up to 12 notes to the prompt only when there are any).]
 - New shopping list you can share with your household. Tap the checklist button at the top of the store list. Type anything you need, like milk or paper towels, and tap the circle to check it off.
 - On a meal plan's grocery list, tap "Add to shopping list" to put the plan's items on it. Items already on the list aren't added twice.
 - To share it, sign in with Apple, then tap "Share this list" at the bottom and send the link to your spouse or family. Once they join, you both see one list. Anything either of you adds or checks off shows up on both phones within a second or two.
