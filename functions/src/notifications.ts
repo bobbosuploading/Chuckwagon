@@ -4,16 +4,22 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { requireApp } from "./appCheck";
+import { checkWatchList, cleanWatchSettings, watchIsOn, watchMessage, WatchHit, WatchSettings } from "./saleWatch";
+import { recordWatchPrices, WatchStoreCache } from "./watchData";
 
 /**
  * Push notifications (Firebase Cloud Messaging, free). Both kinds are opt-in from Settings:
  *  - "New deals are in": a starred store's weekly ad changed. At most one every DEALS_GAP_DAYS.
  *  - Meal planning reminder: once a week on the day and hour the shopper picked.
- * So a shopper gets two notifications a week at most.
+ *  - Sale alerts: items on the shopper's watch list hit a good sale, or a cut on sale makes
+ *    homemade bacon, ground beef or jerky worth it (saleWatch.ts). Checked once a day; at most
+ *    one every WATCH_GAP_DAYS, and it stands in for the deals alert when both are due.
+ * So a shopper gets three notifications a week at most, and usually one or two.
  *
  * Settings live on users/{uid}.notify (written only here):
  *   on, token, deals, planDay (-1 off, 0 = Sunday … 6), planHour (0-23), timeZone, storeIds,
- *   adKeys { storeId: latest deal end date seen }, lastDealsAlertAt, lastPlanNudgeAt
+ *   adKeys { storeId: latest deal end date seen }, lastDealsAlertAt, lastPlanNudgeAt,
+ *   watch (WatchSettings), watchCheckedOn (local date), lastWatchAlertAt, watchSent { hit key: ISO date }
  */
 
 const DEALS_GAP_DAYS = 6;
@@ -23,6 +29,12 @@ const DEALS_LAST_HOUR = 19;
 const MAX_STORES = 8;
 const TEST_PUSHES_PER_DAY = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const WATCH_GAP_DAYS = 6;
+/** The daily watch check runs at the first hourly run from this local hour. */
+const WATCH_FIRST_HOUR = 10;
+/** A sale already announced isn't announced again for this long. */
+const WATCH_SENT_DAYS = 14;
+const WATCH_CHECKS_PER_DAY = 20;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface NotifySettings {
@@ -36,6 +48,10 @@ interface NotifySettings {
   adKeys?: Record<string, string>;
   lastDealsAlertAt?: string;
   lastPlanNudgeAt?: string;
+  watch?: WatchSettings;
+  watchCheckedOn?: string;
+  lastWatchAlertAt?: string;
+  watchSent?: Record<string, string>;
 }
 
 function validTimeZone(tz: unknown): string {
@@ -123,7 +139,7 @@ async function send(token: string, msg: { title: string; body: string }, kind: s
 }
 
 /**
- * Settings > Notifications. Data: { token, deals, planDay, planHour, timeZone, storeIds }.
+ * Settings > Notifications. Data: { token, deals, planDay, planHour, timeZone, storeIds, watch }.
  * Turning everything off keeps nothing but the switches.
  */
 export const saveNotificationSettings = onCall(async (request) => {
@@ -138,7 +154,8 @@ export const saveNotificationSettings = onCall(async (request) => {
   const storeIds = (Array.isArray(d.storeIds) ? d.storeIds : [])
     .filter((s): s is string => typeof s === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(s))
     .slice(0, MAX_STORES);
-  const on = !!token && (deals || planDay >= 0);
+  const watch = cleanWatchSettings(d.watch);
+  const on = !!token && (deals || planDay >= 0 || watchIsOn(watch));
 
   const db = getFirestore();
   const ref = db.collection("users").doc(request.auth.uid);
@@ -162,11 +179,14 @@ export const saveNotificationSettings = onCall(async (request) => {
   await ref.set({
     notify: {
       on, token: on ? token : FieldValue.delete(), deals, planDay, planHour, timeZone, storeIds,
-      adKeys, updatedAt: new Date().toISOString(),
+      adKeys, watch, updatedAt: new Date().toISOString(),
     },
   }, { mergeFields: ["notify.on", "notify.token", "notify.deals", "notify.planDay", "notify.planHour",
-    "notify.timeZone", "notify.storeIds", "notify.adKeys", "notify.updatedAt"] });
-  logger.info("Notification settings saved", { uid: request.auth.uid, on, deals, planDay, planHour, stores: storeIds.length });
+    "notify.timeZone", "notify.storeIds", "notify.adKeys", "notify.watch", "notify.updatedAt"] });
+  logger.info("Notification settings saved", {
+    uid: request.auth.uid, on, deals, planDay, planHour, stores: storeIds.length,
+    watchItems: watch.items.length + watch.custom.length, diy: [watch.bacon, watch.groundBeef, watch.jerky].filter(Boolean).length,
+  });
   return { on };
 });
 
@@ -191,6 +211,57 @@ export const sendTestNotification = onCall(async (request) => {
   return { sent: true };
 });
 
+/**
+ * Settings > Sale alerts > "What's on sale now": the watch list checked against this week's
+ * deals right away, so shoppers can see what an alert would say. Data: { storeIds, watch }.
+ * Returns every watched item on sale, with `alert` true for the ones that pass the threshold.
+ */
+export const checkSaleWatch = onCall(async (request) => {
+  requireApp(request, "checkSaleWatch");
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first");
+  const d = (request.data ?? {}) as Record<string, unknown>;
+  const watch = cleanWatchSettings(d.watch);
+  const storeIds = (Array.isArray(d.storeIds) ? d.storeIds : [])
+    .filter((s): s is string => typeof s === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(s))
+    .slice(0, MAX_STORES);
+  if (!watchIsOn(watch) || !storeIds.length) return { hits: [] };
+  const db = getFirestore();
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  const usage = db.collection("usage").doc(`${request.auth.uid}_${day}`);
+  await db.runTransaction(async (tx) => {
+    const u = await tx.get(usage);
+    if (((u.get("watchChecks") as number | undefined) ?? 0) >= WATCH_CHECKS_PER_DAY) {
+      throw new HttpsError("resource-exhausted", "That's enough checks for today. Your alerts still come on their own.");
+    }
+    tx.set(usage, { uid: request.auth!.uid, day, watchChecks: FieldValue.increment(1) }, { merge: true });
+  });
+  const stores = await new WatchStoreCache(db).many(storeIds);
+  const histories = new Map(stores.map((s) => [s.sourceId, s.history]));
+  const hits = checkWatchList(watch, stores.flatMap((s) => s.offers), histories, localNow(validTimeZone(d.timeZone)).date);
+  return { hits: hits.slice(0, 40).map(publicHit) };
+});
+
+function publicHit(h: WatchHit) {
+  return { label: h.label, kind: h.kind, line: h.line, storeName: h.storeName, product: h.product, pct: h.pct, alert: h.alert };
+}
+
+/**
+ * The daily watch check for one shopper. Returns hits to announce (already filtered for ones
+ * sent before) and the settings updates to save.
+ */
+async function watchAlerts(n: NotifySettings, cache: WatchStoreCache, db: Firestore, today: string, now: Date):
+  Promise<{ hits: WatchHit[]; sent: Record<string, string> }> {
+  const stores = await cache.many(n.storeIds ?? []);
+  // Each store's price history grows by one point a day, whoever's check gets there first.
+  for (const s of stores) await recordWatchPrices(db, s, today).catch((e) => logger.warn("watchPrices write failed", { store: s.sourceId, message: (e as Error).message }));
+  const histories = new Map(stores.map((s) => [s.sourceId, s.history]));
+  const cutoff = now.getTime() - WATCH_SENT_DAYS * DAY_MS;
+  const sent = Object.fromEntries(Object.entries(n.watchSent ?? {}).filter(([, at]) => Date.parse(at) > cutoff));
+  const hits = checkWatchList(n.watch!, stores.flatMap((s) => s.offers), histories, today)
+    .filter((h) => h.alert && !sent[h.key]);
+  return { hits, sent };
+}
+
 /** Hourly: sends planning reminders that are due, and deals alerts for newly loaded ads. */
 export const sendNotifications = onSchedule(
   { schedule: "every 1 hours", timeZone: "America/Chicago", memory: "256MiB" },
@@ -198,8 +269,9 @@ export const sendNotifications = onSchedule(
     const db = getFirestore();
     const users = await db.collection("users").where("notify.on", "==", true).get();
     const stores = new StoreCache(db);
+    const watchStores = new WatchStoreCache(db);
     const now = new Date();
-    let plans = 0, dealAlerts = 0, dropped = 0;
+    let plans = 0, dealAlerts = 0, watchAlertsSent = 0, dropped = 0;
 
     for (const user of users.docs) {
       const n = user.get("notify") as NotifySettings;
@@ -216,6 +288,33 @@ export const sendNotifications = onSchedule(
         badToken ||= r === "bad-token";
       }
 
+      // Sale alerts for the watch list, checked once a day during the day.
+      let watchSent = false;
+      const daytimeNow = local.hour >= DEALS_FIRST_HOUR && local.hour <= DEALS_LAST_HOUR;
+      if (!badToken && watchIsOn(n.watch) && (n.storeIds?.length ?? 0) > 0 && local.hour >= WATCH_FIRST_HOUR &&
+        daytimeNow && n.watchCheckedOn !== local.date) {
+        update["notify.watchCheckedOn"] = local.date;
+        const lastWatch = n.lastWatchAlertAt ? Date.parse(n.lastWatchAlertAt) : 0;
+        if (now.getTime() - lastWatch >= WATCH_GAP_DAYS * DAY_MS) {
+          try {
+            const { hits, sent } = await watchAlerts(n, watchStores, db, local.date, now);
+            if (hits.length) {
+              const r = await send(n.token, watchMessage(hits), "watch");
+              if (r === "sent") {
+                hits.forEach((h) => { sent[h.key] = now.toISOString(); });
+                update["notify.lastWatchAlertAt"] = now.toISOString();
+                watchSent = true;
+                watchAlertsSent++;
+              }
+              badToken ||= r === "bad-token";
+            }
+            update["notify.watchSent"] = sent;
+          } catch (e) {
+            logger.warn("Watch check failed", { uid: user.id, message: (e as Error).message });
+          }
+        }
+      }
+
       // New weekly ads at the shopper's stores.
       if (!badToken && n.deals && (n.storeIds?.length ?? 0) > 0) {
         const known = n.adKeys ?? {};
@@ -230,7 +329,11 @@ export const sendNotifications = onSchedule(
           const lastDeals = n.lastDealsAlertAt ? Date.parse(n.lastDealsAlertAt) : 0;
           const daytime = local.hour >= DEALS_FIRST_HOUR && local.hour <= DEALS_LAST_HOUR;
           const tooSoon = now.getTime() - lastDeals < DEALS_GAP_DAYS * DAY_MS;
-          if (daytime && !tooSoon) {
+          if (daytime && !tooSoon && watchSent) {
+            // The sale alert just went out; one notification is enough today. Count the ads as announced.
+            update["notify.lastDealsAlertAt"] = now.toISOString();
+            fresh.forEach((f) => { update[`notify.adKeys.${f.id}`] = f.adKey; });
+          } else if (daytime && !tooSoon) {
             const r = await send(n.token, dealsMessage(fresh.map((f) => f.name)), "deals");
             if (r === "sent") { update["notify.lastDealsAlertAt"] = now.toISOString(); dealAlerts++; }
             badToken ||= r === "bad-token";
@@ -250,6 +353,6 @@ export const sendNotifications = onSchedule(
       }
       if (Object.keys(update).length) await user.ref.update(update);
     }
-    logger.info("Notifications sent", { users: users.size, plans, dealAlerts, dropped });
+    logger.info("Notifications sent", { users: users.size, plans, dealAlerts, watchAlerts: watchAlertsSent, dropped });
   }
 );

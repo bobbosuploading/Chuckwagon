@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Settings > Notifications: opt-in deals alerts and a weekly meal planning reminder.
+/// Settings > Notifications: opt-in deals alerts, a weekly meal planning reminder, and sale alerts.
 struct NotificationsSection: View {
     @Environment(Preferences.self) private var prefs
     @Environment(\.scenePhase) private var scenePhase
@@ -33,6 +33,11 @@ struct NotificationsSection: View {
                     ForEach(Self.hours, id: \.hour) { Text($0.label).tag($0.hour) }
                 }
             }
+            NavigationLink {
+                SaleAlertsView()
+            } label: {
+                LabeledContent("Sale alerts", value: saleAlertsSummary)
+            }
             if blocked {
                 Text("Notifications are turned off for Chuckwagon in iPhone Settings.")
                     .font(Theme.body(.footnote))
@@ -54,13 +59,19 @@ struct NotificationsSection: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("At most one deals alert and one reminder a week. Deals alerts are for your starred stores, or the three closest if you haven't starred any.")
+            Text("At most one deals alert and one reminder a week. Sale alerts tell you when cuts you watch go on a big sale, or when it's cheaper to make your own bacon, ground beef or jerky. Deals and sale alerts are for your starred stores, or the three closest if you haven't starred any.")
         }
         .task { blocked = await PushNotifications.isBlocked() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task { blocked = await PushNotifications.isBlocked() }
         }
+    }
+
+    private var saleAlertsSummary: String {
+        let count = prefs.watchItems.count + prefs.watchCustom.count
+            + [prefs.watchBacon, prefs.watchGroundBeef, prefs.watchJerky].filter { $0 }.count
+        return count == 0 ? "Off" : "\(count) watched"
     }
 
     /// Turning something on asks iOS for permission first; turning it off just applies.

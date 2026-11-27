@@ -35,7 +35,7 @@ export const KROGER_RADIUS_MILES = 50;
  * Price regions (see regions.ts). Stores of the same chain and Kroger division within
  * KROGER_SHARE_MILES of a collected store reuse its deals and prices instead of being
  * collected again. At most KROGER_MAX_SOURCE_STORES stores are collected in full per run
- * (about 130 product calls each; Kroger allows 10,000 a day). Past the cap, a store borrows
+ * (about 145 product calls each; Kroger allows 10,000 a day). Past the cap, a store borrows
  * from the nearest collected store of its chain within KROGER_STRETCH_MILES.
  */
 export const KROGER_SHARE_MILES = 50;

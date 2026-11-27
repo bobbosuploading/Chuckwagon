@@ -43,7 +43,7 @@ struct RootView: View {
 
     /// Changes that the backend needs to know about for notifications.
     private var notifySettings: String {
-        "\(prefs.notifyNewDeals)|\(prefs.planReminderDay)|\(prefs.planReminderHour)|\(prefs.favoriteStoreIds)"
+        "\(prefs.notifyNewDeals)|\(prefs.planReminderDay)|\(prefs.planReminderHour)|\(prefs.favoriteStoreIds)|\(prefs.watchSignature)"
     }
 
     var body: some View {

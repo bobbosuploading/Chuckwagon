@@ -49,10 +49,17 @@ export const PRICE_BOOK_TERMS: Record<Category, string[]> = {
     "chicken broth", "canned tomatoes", "tomato paste", "salsa", "soy sauce", "taco seasoning", "olive oil",
     "vegetable oil", "vinegar", "ketchup", "mayonnaise", "mustard", "sugar", "honey", "peanut butter",
     "bbq sauce", "spices", "breadcrumbs", "cornstarch", "noodles", "oats",
+    // Sale alerts compare homemade jerky with store jerky (saleWatch.ts).
+    "beef jerky",
   ],
   bakery: ["hamburger buns", "hot dog buns"],
   frozen: ["frozen corn", "frozen peas"],
-  meat: [],
+  // Cuts on the sale-alert watch list (saleWatch.ts). Their everyday prices are the "usual
+  // price" a sale is measured against, and promos here count as sales too.
+  meat: [
+    "pork belly", "brisket", "chuck roast", "pork shoulder", "pork ribs", "beef ribs", "sirloin tip",
+    "eye of round", "flank steak", "tri tip", "whole chicken", "chicken thighs", "pork loin",
+  ],
   seafood: [],
   household: [],
 };
