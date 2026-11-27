@@ -6,6 +6,19 @@ The build number lives in ios/project.yml (CURRENT_PROJECT_VERSION). Every time
 it goes up, add a new "Build N" section at the top of this list.
 
 ========================================
+Build 11 (0.1.0)
+========================================
+- The barcode scanner on the shopping list should now read barcodes. In build 10 it could show the camera without picking anything up. You'll feel a tap when it catches one. Hold the phone steady a few inches away. On a round bottle, turn it so the bars face you flat.
+- Camera won't read it? Type the numbers printed under the barcode instead and tap "Look up", or pick a photo of it.
+- Barcodes the app read but couldn't name (like some household cleaners) are looked up in more places now. Scan the same item again to check.
+- Try it: scan a cleaner or snack you always buy and add it to your list.
+- Your iPhone no longer locks while the shopping list, a meal plan or a recipe is open, so you don't have to unlock it with your hands full. Choose how long in Settings, under "Shopping and cooking": off, 30 minutes (the default), 1 hour, or as long as it's open.
+- The keyboard on the shopping list goes away when you scroll, tap "Done" above it, check off an item, or tap return in an empty box. With an item typed, return adds it and keeps the keyboard up for the next one.
+- "Stock up" tips from a meal plan (like "Freezes well. Buy extra") now come along when you tap "Add to shopping list".
+[The lookup fix is in functions (barcodeProduct): needs a functions deploy, and works on build 10 too.]
+[Stock-up tips need the new firestore rules deployed before build 11 is used, or "Add to shopping list" is refused.]
+
+========================================
 Build 10 (0.1.0)
 ========================================
 - Add your own notes to any recipe. Open a meal and tap "Add a note" under "Cook's notes" to write down what you changed to make it better, like "used twice the garlic" or "10 more minutes in the oven". Only you can see your notes.

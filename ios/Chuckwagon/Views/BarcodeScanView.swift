@@ -27,6 +27,7 @@ struct BarcodeScanView: View {
     @State private var problem: String?
     @State private var adding = false
     @State private var added: [String] = []
+    @State private var typedCode = ""
 
     private var cameraWorks: Bool { DataScannerViewController.isSupported && DataScannerViewController.isAvailable }
 
@@ -40,6 +41,7 @@ struct BarcodeScanView: View {
                 }
             }
             .background(Theme.cream.ignoresSafeArea())
+            .keyboardDoneButton()
             .navigationTitle("Scan a barcode")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Done") { dismiss() } }
@@ -56,7 +58,9 @@ struct BarcodeScanView: View {
     private var scanner: some View {
         VStack(spacing: 14) {
             if cameraWorks {
-                BarcodeCamera { code in Task { await lookUp(code) } }
+                BarcodeCamera(onCode: { code in Task { await lookUp(code) } },
+                              onProblem: { problem = $0 })
+                    .frame(minHeight: 260)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(alignment: .bottom) {
                         Text("Point at the barcode")
@@ -76,6 +80,17 @@ struct BarcodeScanView: View {
                 Label("Added \(added.last ?? "")", systemImage: "checkmark.circle.fill")
                     .font(Theme.body(.footnote, weight: .semibold))
                     .foregroundStyle(Theme.sage)
+            }
+            HStack {
+                TextField("Or type the numbers under the barcode", text: $typedCode)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(.roundedBorder)
+                Button("Look up") {
+                    let code = typedCode
+                    typedCode = ""
+                    Task { await lookUp(code) }
+                }
+                .disabled(!(8...14).contains(typedCode.filter(\.isNumber).count))
             }
             PhotosPicker(selection: $photo, matching: .images) {
                 Label("Use a photo of a barcode", systemImage: "photo")
@@ -194,41 +209,101 @@ struct BarcodeScanView: View {
 /// The live camera scanner, reporting the first product barcode it sees.
 private struct BarcodeCamera: UIViewControllerRepresentable {
     var onCode: (String) -> Void
+    var onProblem: (String) -> Void
 
-    func makeUIViewController(context: Context) -> DataScannerViewController {
+    func makeUIViewController(context: Context) -> ScannerHost {
         let scanner = DataScannerViewController(
+            // UPC-A barcodes (most US products) are read as EAN-13 with a leading 0.
             recognizedDataTypes: [.barcode(symbologies: [.ean13, .ean8, .upce])],
-            qualityLevel: .balanced,
+            qualityLevel: .accurate,
+            recognizesMultipleItems: false,
+            isHighFrameRateTrackingEnabled: true,
+            isGuidanceEnabled: true,
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
-        try? scanner.startScanning()
-        return scanner
+        let host = ScannerHost(scanner: scanner)
+        host.onProblem = onProblem
+        return host
     }
 
-    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
+    func updateUIViewController(_ host: ScannerHost, context: Context) {
         context.coordinator.onCode = onCode
+        host.onProblem = onProblem
     }
 
-    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
-        scanner.stopScanning()
+    static func dismantleUIViewController(_ host: ScannerHost, coordinator: Coordinator) {
+        host.scanner.stopScanning()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode) }
 
+    /// Holds the scanner and starts it once it's on screen. Starting earlier (while the view is
+    /// being made) can leave the camera showing but never reading anything.
+    final class ScannerHost: UIViewController {
+        let scanner: DataScannerViewController
+        var onProblem: ((String) -> Void)?
+
+        init(scanner: DataScannerViewController) {
+            self.scanner = scanner
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("not used") }
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            addChild(scanner)
+            scanner.view.frame = view.bounds
+            scanner.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.addSubview(scanner.view)
+            scanner.didMove(toParent: self)
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard !scanner.isScanning else { return }
+            do {
+                try scanner.startScanning()
+            } catch {
+                onProblem?("The camera couldn't start scanning (\(error.localizedDescription)). Type the numbers under the barcode, or use a photo.")
+            }
+        }
+    }
+
     @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         var onCode: (String) -> Void
+        private var sent = false
         init(onCode: @escaping (String) -> Void) { self.onCode = onCode }
 
-        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
-            for item in addedItems {
-                if case .barcode(let barcode) = item, let code = barcode.payloadStringValue {
+        private func report(_ items: [RecognizedItem]) {
+            guard !sent else { return }
+            for item in items {
+                if case .barcode(let barcode) = item, let code = barcode.payloadStringValue,
+                   (8...14).contains(code.filter(\.isNumber).count) {
+                    sent = true
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     onCode(code)
                     return
                 }
             }
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            report(addedItems)
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didUpdate updatedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            report(allItems)
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didTapOn item: RecognizedItem) {
+            report([item])
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable) {
+            sent = false
         }
     }
 }

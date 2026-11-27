@@ -63,6 +63,16 @@ struct PreferencesForm: View {
 
             NotificationsSection()
 
+            Section {
+                Picker("Keep screen on", selection: $prefs.keepScreenOnMinutes) {
+                    ForEach(ScreenAwake.choices, id: \.minutes) { Text($0.label).tag($0.minutes) }
+                }
+            } header: {
+                Text("Shopping and cooking")
+            } footer: {
+                Text("While your shopping list, a meal plan or a recipe is open, your iPhone won't lock on its own, so you don't have to unlock it with your hands full. It goes back to normal when you leave those screens or the time is up.")
+            }
+
             Section("Household") {
                 Stepper("People: \(prefs.householdSize)", value: $prefs.householdSize, in: 1...10)
                 Stepper("Meals per trip: \(prefs.mealCount)", value: $prefs.mealCount, in: 1...7)
@@ -101,6 +111,8 @@ struct PreferencesForm: View {
             }
         }
         .creamBackground()
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneButton()
         .font(Theme.body())
         .foregroundStyle(Theme.ink)
         .task {

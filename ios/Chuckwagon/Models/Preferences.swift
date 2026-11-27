@@ -37,6 +37,9 @@ final class Preferences {
     var watchGroundBeef: Bool { didSet { defaults.set(watchGroundBeef, forKey: "watchGroundBeef") } }
     var watchJerky: Bool { didSet { defaults.set(watchJerky, forKey: "watchJerky") } }
     var watchAlertPct: Int { didSet { defaults.set(watchAlertPct, forKey: "watchAlertPct") } }
+    /// Keep the screen on while the shopping list or a recipe is open: minutes, 0 = off,
+    /// -1 = as long as it's open (ScreenAwake).
+    var keepScreenOnMinutes: Int { didSet { defaults.set(keepScreenOnMinutes, forKey: "keepScreenOnMinutes") } }
 
     var wantsSaleAlerts: Bool { !watchItems.isEmpty || !watchCustom.isEmpty || watchBacon || watchGroundBeef || watchJerky }
     var wantsNotifications: Bool { notifyNewDeals || planReminderDay >= 0 || wantsSaleAlerts }
@@ -128,5 +131,6 @@ final class Preferences {
         watchGroundBeef = defaults.bool(forKey: "watchGroundBeef")
         watchJerky = defaults.bool(forKey: "watchJerky")
         watchAlertPct = defaults.object(forKey: "watchAlertPct") as? Int ?? 30
+        keepScreenOnMinutes = defaults.object(forKey: "keepScreenOnMinutes") as? Int ?? 30
     }
 }

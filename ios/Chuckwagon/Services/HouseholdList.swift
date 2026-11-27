@@ -26,6 +26,8 @@ final class HouseholdList {
         var storeName: String
         /// Set on items added by scanning a barcode, so the exact product (brand and size) is kept.
         var barcode: String
+        /// Worth buying extra of, carried over from a meal plan's grocery list.
+        var stockUp: StockUp?
         var createdAt: Date?
     }
 
@@ -142,8 +144,15 @@ final class HouseholdList {
             forMeals: d["forMeals"] as? [String] ?? [],
             storeName: d["storeName"] as? String ?? "",
             barcode: d["barcode"] as? String ?? "",
+            stockUp: stockUp(from: d["stockUp"]),
             createdAt: (d["createdAt"] as? Timestamp)?.dateValue()
         )
+    }
+
+    private static func stockUp(from raw: Any?) -> StockUp? {
+        guard let m = raw as? [String: Any], let level = m["level"] as? String else { return nil }
+        let text = { (k: String) in m[k] as? String ?? "" }
+        return StockUp(level: level, reason: text("reason"), keep: text("keep"), howMuch: text("howMuch"), storage: text("storage"))
     }
 
     // MARK: Household
@@ -208,7 +217,7 @@ final class HouseholdList {
         db.collection("households").document(id).collection("items")
     }
 
-    private func newItemData(text: String, note: String = "", aisle: String = "", forMeals: [String] = [], storeName: String = "", barcode: String = "") -> [String: Any] {
+    private func newItemData(text: String, note: String = "", aisle: String = "", forMeals: [String] = [], storeName: String = "", barcode: String = "", stockUp: StockUp? = nil) -> [String: Any] {
         var data: [String: Any] = [
             "text": String(text.prefix(120)),
             "checked": false,
@@ -221,6 +230,13 @@ final class HouseholdList {
         if !trimmedName.isEmpty { data["addedByName"] = trimmedName }
         if !forMeals.isEmpty { data["forMeals"] = Array(forMeals.prefix(10)).map { String($0.prefix(80)) } }
         if !storeName.isEmpty { data["storeName"] = String(storeName.prefix(80)) }
+        if let stockUp {
+            data["stockUp"] = [
+                "level": String(stockUp.level.prefix(20)), "reason": String(stockUp.reason.prefix(80)),
+                "keep": String(stockUp.keep.prefix(20)), "howMuch": String(stockUp.howMuch.prefix(160)),
+                "storage": String(stockUp.storage.prefix(300)),
+            ]
+        }
         if (8...14).contains(barcode.count), barcode.allSatisfy(\.isASCII), barcode.allSatisfy(\.isNumber) { data["barcode"] = barcode }
         return data
     }
@@ -250,7 +266,8 @@ final class HouseholdList {
         let toAdd = fresh.prefix(room)
         for li in toAdd {
             batch.setData(newItemData(text: li.item, note: li.quantityNote, aisle: li.aisle,
-                                      forMeals: li.forMeals, storeName: multiStore ? (li.storeName ?? "") : ""),
+                                      forMeals: li.forMeals, storeName: multiStore ? (li.storeName ?? "") : "",
+                                      stockUp: li.stockUp),
                           forDocument: itemsRef(id).document())
         }
         batch.commit { _ in }
