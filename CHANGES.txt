@@ -14,6 +14,10 @@ Build 10 (0.1.0)
 - See, edit or delete all your notes in Settings, under Food: "Cook's notes".
 - Try it: add a note to a meal, make it a Keeper, then start a new plan, tap "Pick saved meals", pick that meal, and check the new recipe follows your note.
 [Needs a functions deploy (new saveMealNote callable; planMealsForStore reads users/{uid}.mealNotes and adds up to 12 notes to the prompt only when there are any).]
+- Notifications, if you want them. In Settings, under Notifications, you can turn on "New deals at my stores" to hear when a new weekly ad is in at your starred stores (or the three closest, if you haven't starred any). You can also pick a day and time for a weekly "time to plan this week's suppers" reminder.
+- Both are off until you turn them on, and you'll get at most one deals alert and one reminder a week. iPhone asks once if Chuckwagon may send notifications.
+- Try it: turn one on, tap "Send a test notification", and check it shows up. Set the reminder for later today and check it comes at that hour. Deals alerts come the next time a store's weekly ad loads, during the day.
+[Needs the Apple push key uploaded in the Firebase console (Project settings > Cloud Messaging) and a deploy of firestore and functions (saveNotificationSettings, sendTestNotification, hourly sendNotifications, new deals index on storeId + validTo).]
 
 ========================================
 Build 9 (0.1.0)

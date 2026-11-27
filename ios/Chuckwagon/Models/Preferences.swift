@@ -23,6 +23,13 @@ final class Preferences {
     var longitude: Double { didSet { defaults.set(longitude, forKey: "longitude") } }
     /// How far from the ZIP to show stores, in miles.
     var storeRadius: Int { didSet { defaults.set(storeRadius, forKey: "storeRadius") } }
+    /// Notifications (opt-in): "new deals are in" for the shopper's stores, and a weekly
+    /// planning reminder on planReminderDay (0 = Sunday … 6, -1 = off) at planReminderHour.
+    var notifyNewDeals: Bool { didSet { defaults.set(notifyNewDeals, forKey: "notifyNewDeals") } }
+    var planReminderDay: Int { didSet { defaults.set(planReminderDay, forKey: "planReminderDay") } }
+    var planReminderHour: Int { didSet { defaults.set(planReminderHour, forKey: "planReminderHour") } }
+
+    var wantsNotifications: Bool { notifyNewDeals || planReminderDay >= 0 }
 
     /// Radius choices. The collectors look 50 miles out from each area, so going past 50
     /// would show nothing new without pulling more data.
@@ -91,5 +98,8 @@ final class Preferences {
         longitude = defaults.double(forKey: "longitude")
         let radius = defaults.object(forKey: "storeRadius") as? Int ?? Self.defaultRadius
         storeRadius = Self.radiusChoices.contains(radius) ? radius : Self.defaultRadius
+        notifyNewDeals = defaults.bool(forKey: "notifyNewDeals")
+        planReminderDay = defaults.object(forKey: "planReminderDay") as? Int ?? -1
+        planReminderHour = defaults.object(forKey: "planReminderHour") as? Int ?? 17
     }
 }

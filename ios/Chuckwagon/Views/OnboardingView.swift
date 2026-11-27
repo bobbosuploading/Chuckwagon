@@ -61,6 +61,8 @@ struct PreferencesForm: View {
 
             AccountSection()
 
+            NotificationsSection()
+
             Section("Household") {
                 Stepper("People: \(prefs.householdSize)", value: $prefs.householdSize, in: 1...10)
                 Stepper("Meals per trip: \(prefs.mealCount)", value: $prefs.mealCount, in: 1...7)
