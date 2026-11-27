@@ -598,6 +598,33 @@ function looseName(t: string): string {
 /** Words that say little about which ingredient a line is. */
 const FILLER_WORDS = new Set(["fresh", "large", "small", "medium", "whole", "boneless", "skinless", "chopped", "sliced", "diced", "shredded", "ground", "frozen", "canned", "can", "bag", "pack", "package", "jar", "bunch", "the", "and", "with", "for", "lean", "low", "fat", "free", "family", "size", "pkg", "bottle", "box"]);
 
+/** Amount and container words, which don't say what a food is ("3 lb", "half a bag"). */
+const AMOUNT_WORDS = new Set(["lb", "lbs", "pound", "oz", "ounce", "cup", "half", "quarter", "dozen", "piece", "about", "some", "left", "leftover", "box", "container", "carton", "gallon", "bunch", "head", "clove", "stick", "tbsp", "tsp", "few", "couple", "one", "two", "three", "four", "five", "six"]);
+
+/** The words that say what a food is: "half bag fresh spinach" -> ["spinach"]. */
+export function foodWords(t: string): string[] {
+  return looseName(t)
+    .split(" ")
+    .filter((w) => w.length >= 3 && !FILLER_WORDS.has(w) && !AMOUNT_WORDS.has(w));
+}
+
+/**
+ * True when an ingredient is something the shopper has at home (an on-hand or use-up item):
+ * every food word of one appears in the other, so "chicken thighs" matches "bone-in chicken
+ * thighs" and "half bag spinach" matches "fresh spinach", but "rice" doesn't match "rice vinegar".
+ * Leftovers from another meal count too.
+ */
+export function isAtHome(ingredient: string, atHome: string[][]): boolean {
+  const ing = foodWords(ingredient);
+  if (ing.length === 0) return false;
+  if (/\bleftover/i.test(ingredient)) return true;
+  // The last word names the food ("rice vinegar" is vinegar, not rice), so it has to match.
+  const head = ing[ing.length - 1];
+  return atHome.some(
+    (h) => h.length > 0 && h[h.length - 1] === head && (h.every((w) => ing.includes(w)) || ing.every((w) => h.includes(w)))
+  );
+}
+
 /**
  * Which meals a grocery line is for. The model's forMeals sometimes names a meal a little
  * differently ("Beef Tacos" for "Easy beef tacos"), or names one that was renamed to keep names
@@ -960,6 +987,10 @@ ${noTrip ? "(none: no store trip)" : lines}`;
       .split(",")
       .map(norm)
       .filter(Boolean);
+    // On-hand and use-up food is at home, so it never goes on the list, even if the model listed it.
+    const homeWords = [...onHand, ...useUp].map(foodWords).filter((w) => w.length > 0);
+    const homeLines = listed.filter((li) => !li.dealId && isAtHome(li.item, homeWords));
+    for (const li of homeLines) listed.splice(listed.indexOf(li), 1);
     const missing = new Map<string, ModelPlan["groceryList"][number]>();
     // With no store trip there's nothing to add: anything the model still listed is shown as "you may need".
     for (const meal of noTrip ? [] : plan.meals) {
@@ -970,7 +1001,7 @@ ${noTrip ? "(none: no store trip)" : lines}`;
         // Loose match, so "Onion" counts as listed when "Onions" is, and "Pasta, any shape" when "Pasta" is.
         const name = norm(ing.item).replace(/s$/, "");
         const isListed = [...listedNames].some((n) => n.includes(name) || name.includes(n.replace(/s$/, "")));
-        if (!deal && (isListed || name === "water" || atHome.some((h) => name.includes(h)))) continue;
+        if (!deal && (isListed || name === "water" || atHome.some((h) => name.includes(h)) || isAtHome(ing.item, homeWords))) continue;
         const existing = missing.get(key);
         if (existing) {
           existing.quantityNote += ` + ${ing.amount}`;

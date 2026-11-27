@@ -40,6 +40,9 @@ final class Preferences {
     /// Keep the screen on while the shopping list or a recipe is open: minutes, 0 = off,
     /// -1 = as long as it's open (ScreenAwake).
     var keepScreenOnMinutes: Int { didSet { defaults.set(keepScreenOnMinutes, forKey: "keepScreenOnMinutes") } }
+    /// Long cooks per plan (0 to 2) and how they're cooked ("smoker", "slow cooker" or "any").
+    var longCooks: Int { didSet { defaults.set(longCooks, forKey: "longCooks") } }
+    var longCookHow: String { didSet { defaults.set(longCookHow, forKey: "longCookHow") } }
 
     var wantsSaleAlerts: Bool { !watchItems.isEmpty || !watchCustom.isEmpty || watchBacon || watchGroundBeef || watchJerky }
     var wantsNotifications: Bool { notifyNewDeals || planReminderDay >= 0 || wantsSaleAlerts }
@@ -132,5 +135,7 @@ final class Preferences {
         watchJerky = defaults.bool(forKey: "watchJerky")
         watchAlertPct = defaults.object(forKey: "watchAlertPct") as? Int ?? 30
         keepScreenOnMinutes = defaults.object(forKey: "keepScreenOnMinutes") as? Int ?? 30
+        longCooks = min(2, max(0, defaults.integer(forKey: "longCooks")))
+        longCookHow = defaults.string(forKey: "longCookHow") ?? "any"
     }
 }

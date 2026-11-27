@@ -132,6 +132,21 @@ enum Backend {
         return try doc.data(as: ClubList.self)
     }
 
+    /// The planner's optional modes. Defaults are an ordinary plan.
+    struct PlanExtras {
+        /// Food at home the planner may use (from the on-hand list), like "3 lb pork butt".
+        var onHand: [String] = []
+        /// Food at home that has to go into a meal.
+        var useUp: [String] = []
+        /// "full", "minimal" (buy only what's missing) or "none" (no store trip).
+        var storeTrip = "full"
+        /// The cheapest meals possible; only diet and allergies count.
+        var cheapest = false
+        /// 0 to 2 long cooks, and how they're cooked: "smoker", "slow cooker" or "any".
+        var longCooks = 0
+        var longCookHow = "any"
+    }
+
     /// "Build a meal plan": asks the backend for meals and a grocery list from one to three stores
     /// (`storeId` first, then `alsoStoreIds`).
     /// `onProgress` gets live updates while the plan is made (meals as they're written, then
@@ -139,6 +154,7 @@ enum Backend {
     static func planMeals(storeId: String, alsoStoreIds: [String] = [], prefs: Preferences, haveAtHome: String, premium: Bool = false,
                           includeMeals: [MealPlan.Meal] = [],
                           theme: String? = nil, nightThemes: [String]? = nil,
+                          options: PlanExtras = PlanExtras(),
                           onProgress: @escaping @MainActor @Sendable (PlanProgress) -> Void = { _ in }) async throws -> MealPlan {
         // Watch planProgress/{id}; the backend writes it as the plan takes shape and deletes it when done.
         let progressId = UUID().uuidString
@@ -161,11 +177,20 @@ enum Backend {
             "extraMeals": extraMealIdeas,
             "progressId": progressId,
         ]
-        if prefs.weeklyBudget > 0 {
+        if prefs.weeklyBudget > 0, options.storeTrip != "none" {
             payload["budget"] = prefs.weeklyBudget
         }
         if !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty {
             payload["haveAtHome"] = haveAtHome
+        }
+        // Cook from what's at home, the cheapest mode and long cooks (functions/src/plan.ts).
+        if !options.onHand.isEmpty { payload["onHand"] = Array(options.onHand.prefix(60)) }
+        if !options.useUp.isEmpty { payload["useUp"] = Array(options.useUp.prefix(12)) }
+        if options.storeTrip != "full" { payload["storeTrip"] = options.storeTrip }
+        if options.cheapest { payload["cheapest"] = true }
+        if options.longCooks > 0 {
+            payload["longCooks"] = options.longCooks
+            payload["longCookHow"] = options.longCookHow
         }
         // What the shopper is in the mood for: every meal, and/or one theme per meal ("" = any).
         if let theme { payload["theme"] = theme }

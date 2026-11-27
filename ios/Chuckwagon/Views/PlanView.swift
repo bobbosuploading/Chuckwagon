@@ -72,6 +72,15 @@ struct PlanView: View {
 
             switch tab {
             case .list:
+                if plan.isNoTrip {
+                    Section {
+                        Label(plan.groceryList.isEmpty
+                              ? "No store trip needed. Everything comes from what you have."
+                              : "No store trip planned. These are things the meals could use if you have them or pass a store.",
+                              systemImage: "house.fill")
+                            .font(Theme.body(.subheadline, weight: .semibold))
+                    }
+                }
                 storeSummary
                 if let options = plan.options, options.meals.count > plan.meals.count {
                     Button {
@@ -81,8 +90,10 @@ struct PlanView: View {
                             .font(Theme.body(.subheadline, weight: .semibold))
                     }
                 }
-                AddPlanToListSection(plan: plan)
-                SendToCartSection(plan: plan)
+                if !plan.groceryList.isEmpty {
+                    AddPlanToListSection(plan: plan)
+                    if !plan.isNoTrip { SendToCartSection(plan: plan) }
+                }
                 ForEach(aisles, id: \.0) { aisle, indices in
                     Section(aisle) {
                         ForEach(indices, id: \.self) { i in
@@ -141,6 +152,8 @@ struct PlanView: View {
         // Meal rows and recipes read each meal's nutrition from here.
         .environment(\.mealMacros, plan.mealMacros ?? [:])
         .task(id: plan.id) { await loadMacros() }
+        // A plan cooked from what's at home has little or no list, so open on the meals.
+        .onAppear { if plan.isNoTrip { tab = .meals } }
         .onChange(of: plan.groceryList.filter(\.checked).map(\.id)) { _, ids in
             Task { try? await Backend.saveChecked(planId: plan.id, itemIds: ids) }
         }
@@ -261,10 +274,10 @@ struct PlanView: View {
         let summary = plan.savingsSummary
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(summary.label).font(.system(size: 12, weight: .heavy, design: .rounded)).tracking(1.2)
+                Text(plan.isNoTrip ? "NO STORE TRIP" : summary.label).font(.system(size: 12, weight: .heavy, design: .rounded)).tracking(1.2)
                     .foregroundStyle(.white.opacity(0.85))
-                Text(summary.amount.dollars).font(Theme.title(34)).foregroundStyle(.white)
-                if let note = summary.note {
+                Text(plan.isNoTrip ? "Cook at home" : summary.amount.dollars).font(Theme.title(plan.isNoTrip ? 26 : 34)).foregroundStyle(.white)
+                if !plan.isNoTrip, let note = summary.note {
                     Text(note).font(Theme.body(.caption2)).foregroundStyle(.white.opacity(0.85))
                 }
             }
@@ -384,8 +397,9 @@ struct MealSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(meal.name).font(Theme.title(18)).foregroundStyle(Theme.ink)
-            Text("\(meal.timeMinutes) min · serves \(meal.servings) · \(meal.ingredients.filter(\.isOnSale).count) sale items")
+            Text("\(meal.timeText) · serves \(meal.servings) · \(meal.ingredients.filter(\.isOnSale).count) sale items")
                 .font(.caption).foregroundStyle(.secondary)
+            if meal.isLongCook { LongCookBadge() }
             if let macros = mealMacros[meal.name] {
                 Text("\(macros.isPartial ? "About " : "")\(macros.summary) per serving")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -505,7 +519,11 @@ struct MealDetailView: View {
     var body: some View {
         List {
             Section {
-                Label("\(meal.timeMinutes) minutes", systemImage: "clock")
+                Label(meal.isLongCook ? "About \(meal.timeText), start to finish" : "\(meal.timeMinutes) minutes", systemImage: "clock")
+                if meal.isLongCook {
+                    Label("Long cook: best on a weekend or a day off. Check the first steps for when to start.", systemImage: "flame")
+                        .foregroundStyle(Theme.red)
+                }
                 Label("Serves \(meal.servings)", systemImage: "person.2")
             } footer: {
                 if let sharedFrom {
@@ -584,5 +602,16 @@ struct MealDetailView: View {
         .mealSharing(planId: planId, meal: meal.name)
         .navigationTitle(meal.name)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// "Long cook · best on a weekend" under a smoker or slow-cooker meal's name.
+struct LongCookBadge: View {
+    var body: some View {
+        Label("Long cook · best on a weekend", systemImage: "flame.fill")
+            .font(.caption2.bold())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Theme.red, in: Capsule())
     }
 }

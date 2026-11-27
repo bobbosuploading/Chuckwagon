@@ -222,6 +222,18 @@ struct MealPlan: Codable, Identifiable, Hashable {
     /// Per-serving nutrition for each meal, by meal name (from USDA data). Added after the
     /// plan is made (Backend.planMacros), so new and older plans start without it.
     var mealMacros: [String: MealMacros]?
+    /// What was asked for (only the parts the app shows). Older plans may not have all of it.
+    var request: Request?
+
+    struct Request: Codable, Hashable {
+        /// "minimal" or "none"; missing means a normal trip.
+        var storeTrip: String?
+        var cheapest: Bool?
+        var useUp: [String]?
+    }
+
+    /// Cooked only from what's at home, with no store trip.
+    var isNoTrip: Bool { request?.storeTrip == "none" }
 
     struct Options: Codable, Hashable {
         /// Every meal idea, the planner's main picks first.
@@ -312,6 +324,17 @@ struct MealPlan: Codable, Identifiable, Hashable {
         var timeMinutes: Int
         var ingredients: [Ingredient]
         var steps: [String]
+        /// A long, low-and-slow cook (smoker or slow cooker), best on a weekend. Older plans don't have it.
+        var longCook: Bool?
+
+        var isLongCook: Bool { longCook == true }
+
+        /// "30 min", or "6 hr" / "5½ hr" for long cooks.
+        var timeText: String {
+            guard timeMinutes >= 120 else { return "\(timeMinutes) min" }
+            let halves = Int((Double(timeMinutes) / 30).rounded())
+            return halves % 2 == 0 ? "\(halves / 2) hr" : "\(halves / 2)½ hr"
+        }
     }
 
     /// One serving's nutrition, worked out from USDA FoodData Central (functions/src/nutrition.ts).

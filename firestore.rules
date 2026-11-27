@@ -73,6 +73,27 @@ service cloud.firestore {
           && (!('createdAt' in d) || d.createdAt is timestamp)
           && (!('updatedAt' in d) || d.updatedAt is timestamp);
       }
+      // Food the household has at home, for "Cook from what I have".
+      function validOnHand(d) {
+        return d.keys().hasOnly(['text', 'note', 'kind', 'useSoon', 'addedBy', 'addedByName', 'barcode',
+                                 'createdAt', 'updatedAt'])
+          && d.text is string && d.text.size() > 0 && d.text.size() <= 120
+          && d.useSoon is bool
+          && d.addedBy is string
+          && (!('note' in d) || (d.note is string && d.note.size() <= 60))
+          && (!('kind' in d) || d.kind in ['Protein', 'Produce', 'Dairy', 'Pantry', 'Frozen', 'Other'])
+          && (!('addedByName' in d) || (d.addedByName is string && d.addedByName.size() <= 30))
+          && (!('barcode' in d) || (d.barcode is string && d.barcode.matches('[0-9]{8,14}')))
+          && (!('createdAt' in d) || d.createdAt is timestamp)
+          && (!('updatedAt' in d) || d.updatedAt is timestamp);
+      }
+      match /onHand/{itemId} {
+        allow read, delete: if isMember();
+        allow create: if isMember() && validOnHand(request.resource.data)
+          && request.resource.data.addedBy == request.auth.uid;
+        allow update: if isMember() && validOnHand(request.resource.data)
+          && request.resource.data.addedBy == resource.data.addedBy;
+      }
       match /items/{itemId} {
         allow read, delete: if isMember();
         allow create: if isMember() && validItem(request.resource.data)
