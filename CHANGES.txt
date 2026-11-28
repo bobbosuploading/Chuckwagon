@@ -11,7 +11,8 @@ Build 13 (0.1.0)
 - Links to the Chuckwagon website (like the Features page) now open in Safari. Before, they opened the app and left you on the store list.
 [Website links fix: app hands non-share links to Safari; apple-app-site-association now excludes everything but /m/ and /h/ (functions deploy).]
 - Plans no longer use your on-hand food unless you turn on "Cook from what I have". Before, a normal plan (or "Cheapest possible") could build meals around what was on your on-hand list and leave it off the grocery list. Try it: build a plan with "Cook from what I have" off and check the meals don't say they use food you already have.
-[On-hand fix: app sends the on-hand list only when Cook from what I have is on. App-only, no deploy.]
+- "Cook from what I have" now starts with everything on your on-hand list checked. Uncheck anything you don't want used, like meat that's still frozen or something you used up and forgot to take off. Food with a flame goes into the meals first. Try it: turn it on, uncheck a couple of things, and check the plan leaves them out.
+[On-hand fix: app sends the on-hand list only when Cook from what I have is on, and only checked items; flame items are the must-use list. App-only, no deploy.]
 
 ========================================
 Build 12 (0.1.0)
