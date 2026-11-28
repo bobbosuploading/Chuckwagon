@@ -152,7 +152,7 @@ struct PlanTripView: View {
             } header: {
                 Text("Already have at home")
             } footer: {
-                Text(household.onHand.isEmpty
+                Text(household.onHand.isEmpty || !cookFromHave
                      ? "We'll leave these off your list. Salt, pepper, oil and basic spices are assumed."
                      : "We'll leave these off your list. Salt, pepper, oil and basic spices are assumed, and so is everything on your on-hand list.")
             }
@@ -394,7 +394,9 @@ struct PlanTripView: View {
         let useUp = useUpTexts
         let useUpKeys = Set(useUp.map(HouseholdList.key))
         let extras = Backend.PlanExtras(
-            onHand: household.onHand.map(\.planText).filter { !useUpKeys.contains(HouseholdList.key($0)) },
+            // The on-hand list goes to the planner only with "Cook from what I have" on. Otherwise
+            // the planner builds meals around it, which the shopper didn't ask for.
+            onHand: cookFromHave ? household.onHand.map(\.planText).filter { !useUpKeys.contains(HouseholdList.key($0)) } : [],
             useUp: useUp,
             storeTrip: cookFromHave ? storeTrip : "full",
             cheapest: cheapest,
