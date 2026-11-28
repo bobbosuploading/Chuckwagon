@@ -23,9 +23,10 @@ struct PlanTripView: View {
     /// What the shopper feels like eating this trip (not saved for next time).
     @State private var mood = MealMood()
     @State private var premium = false
-    /// "Cook from what I have": on-hand items to use up (by id), others typed in, and the trip.
+    /// "Cook from what I have": on-hand items the shopper unchecked (by id), others typed in, and the trip.
+    /// Everything on the on-hand list starts out checked.
     @State private var cookFromHave = false
-    @State private var useUpIds: Set<String> = []
+    @State private var skipIds: Set<String> = []
     @State private var typedUseUp = ""
     @State private var storeTrip = "full"
     @State private var showAllOnHand = false
@@ -152,7 +153,7 @@ struct PlanTripView: View {
             } header: {
                 Text("Already have at home")
             } footer: {
-                Text(household.onHand.isEmpty
+                Text(household.onHand.isEmpty || !cookFromHave
                      ? "We'll leave these off your list. Salt, pepper, oil and basic spices are assumed."
                      : "We'll leave these off your list. Salt, pepper, oil and basic spices are assumed, and so is everything on your on-hand list.")
             }
@@ -177,7 +178,7 @@ struct PlanTripView: View {
     private var noTrip: Bool { cookFromHave && storeTrip == "none" }
 
     private var canPlan: Bool {
-        if noTrip { return !useUpTexts.isEmpty || !household.onHand.isEmpty || !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty }
+        if noTrip { return !useUpTexts.isEmpty || !includedOnHand.isEmpty || !haveAtHome.trimmingCharacters(in: .whitespaces).isEmpty }
         return !picked.isEmpty
     }
 
@@ -191,10 +192,16 @@ struct PlanTripView: View {
         }
     }
 
-    /// What has to be cooked: picked on-hand items and anything typed.
+    /// On-hand food the planner may use: everything the shopper left checked.
+    private var includedOnHand: [HouseholdList.OnHandItem] {
+        guard cookFromHave else { return [] }
+        return household.onHand.filter { !skipIds.contains($0.id) }
+    }
+
+    /// What has to be cooked: checked on-hand items marked "use soon", and anything typed.
     private var useUpTexts: [String] {
         guard cookFromHave else { return [] }
-        let picked = household.onHand.filter { useUpIds.contains($0.id) }.map(\.planText)
+        let picked = includedOnHand.filter(\.useSoon).map(\.planText)
         let typed = typedUseUp.split(whereSeparator: { $0 == "," || $0 == "\n" })
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -204,21 +211,16 @@ struct PlanTripView: View {
     private var cookFromHaveSection: some View {
         Section {
             Toggle("Cook from what I have", isOn: $cookFromHave.animation())
-                .onChange(of: cookFromHave) { _, on in
-                    if on, useUpIds.isEmpty {
-                        useUpIds = Set(household.onHand.filter(\.useSoon).map(\.id))
-                    }
-                }
             if cookFromHave {
                 let all = onHandSorted
                 let shown = showAllOnHand ? all : Array(all.prefix(10))
                 ForEach(shown) { item in
                     Button {
-                        if useUpIds.contains(item.id) { useUpIds.remove(item.id) } else { useUpIds.insert(item.id) }
+                        if skipIds.contains(item.id) { skipIds.remove(item.id) } else { skipIds.insert(item.id) }
                     } label: {
                         HStack {
-                            Image(systemName: useUpIds.contains(item.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(useUpIds.contains(item.id) ? Theme.sage : Theme.ink.opacity(0.35))
+                            Image(systemName: skipIds.contains(item.id) ? "circle" : "checkmark.circle.fill")
+                                .foregroundStyle(skipIds.contains(item.id) ? Theme.ink.opacity(0.35) : Theme.sage)
                             Text(item.planText).foregroundStyle(Theme.ink)
                             Spacer()
                             if item.useSoon {
@@ -257,7 +259,7 @@ struct PlanTripView: View {
                 case "minimal":
                     Text("A quick trip: we'll build meals around what you have and buy only the few things missing, on sale where we can.")
                 default:
-                    Text("Checked food goes into the meals first. The rest of your on-hand list stays off the grocery list, and we fill in from the sales.")
+                    Text("Uncheck anything that's frozen solid or already used up. Checked food can go into the meals and stays off the grocery list, food with a flame goes in first, and we fill in from the sales.")
                 }
             }
         }
@@ -394,7 +396,9 @@ struct PlanTripView: View {
         let useUp = useUpTexts
         let useUpKeys = Set(useUp.map(HouseholdList.key))
         let extras = Backend.PlanExtras(
-            onHand: household.onHand.map(\.planText).filter { !useUpKeys.contains(HouseholdList.key($0)) },
+            // Only checked on-hand food, and only with "Cook from what I have" on. Otherwise the
+            // planner builds meals around food the shopper didn't offer.
+            onHand: includedOnHand.map(\.planText).filter { !useUpKeys.contains(HouseholdList.key($0)) },
             useUp: useUp,
             storeTrip: cookFromHave ? storeTrip : "full",
             cheapest: cheapest,
